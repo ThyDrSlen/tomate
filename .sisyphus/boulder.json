@@ -2,8 +2,60 @@
   "active_plan": "/Users/slenthekid/Projects/tomate/.sisyphus/plans/tomate.md",
   "started_at": "2026-03-30T06:48:18.992Z",
   "session_ids": [
-    "ses_2c2cb2e1effe0yOKLQlqveh59B"
+    "ses_2c2cb2e1effe0yOKLQlqveh59B",
+    "ses_2af1924ccffeFrC49HNAT5RDYC",
+    "ses_2af156217ffe5meM4AOSjR3RUi",
+    "ses_2af11525affesrUToUOcaOCtfO",
+    "ses_2ae4efbf3ffe9T2qQG9ou4Nl6y",
+    "ses_2ae4aa439ffeM3FU5iaWlwZmsf"
   ],
   "plan_name": "tomate",
-  "agent": "atlas"
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:2": {
+      "task_key": "todo:2",
+      "task_label": "2",
+      "task_title": "Timer State Machine — Pure TypeScript Logic",
+      "session_id": "ses_2af1924ccffeFrC49HNAT5RDYC",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-04-03T01:16:14.750Z"
+    },
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "Storage Layer — Typed Helpers for Timer State + Session History",
+      "session_id": "ses_2af156217ffe5meM4AOSjR3RUi",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-04-03T01:20:27.252Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Background Service Worker — Alarm-Based Timer Engine",
+      "session_id": "ses_2af11525affesrUToUOcaOCtfO",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-04-03T01:28:36.923Z"
+    },
+    "todo:9": {
+      "task_key": "todo:9",
+      "task_label": "9",
+      "task_title": "Heatmap Component — Custom CSS Grid Visualization",
+      "session_id": "ses_2ae4efbf3ffe9T2qQG9ou4Nl6y",
+      "agent": "Sisyphus-Junior",
+      "category": "visual-engineering",
+      "updated_at": "2026-04-03T04:57:54.069Z"
+    },
+    "todo:12": {
+      "task_key": "todo:12",
+      "task_label": "12",
+      "task_title": "Stats Tab Page — Full Year Heatmap + Totals",
+      "session_id": "ses_2ae4aa439ffeM3FU5iaWlwZmsf",
+      "agent": "Sisyphus-Junior",
+      "category": "visual-engineering",
+      "updated_at": "2026-04-03T05:01:50.259Z"
+    }
+  }
 }
