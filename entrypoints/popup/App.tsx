@@ -1,8 +1,8 @@
 import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
 import { browser } from 'wxt/browser';
-import confetti from 'canvas-confetti';
 
 import { isActivePhase } from '@/lib/timer';
+import { playCelebration } from '@/lib/celebration';
 import {
   getPendingCelebration,
   setPendingCelebration,
@@ -37,13 +37,7 @@ export default function App() {
 
     const pending = await getPendingCelebration();
     if (pending) {
-      confetti({
-        particleCount: 150,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#DC2626', '#16A34A', '#FBBF24'],
-      });
-      try { new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html')).play(); } catch {}
+      playCelebration('work');
       await setPendingCelebration(false);
     }
 
