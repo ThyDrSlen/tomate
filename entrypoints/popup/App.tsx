@@ -9,18 +9,27 @@ import {
   getCurrentLabel,
   setCurrentLabel,
   getTodayCount,
+  getHeatmapData,
 } from '@/lib/storage';
 import { INITIAL_STATE, type TimerState } from '@/lib/types';
 
 import TimerRing from '@/components/TimerRing';
 import Controls from '@/components/Controls';
 import TaskLabel from '@/components/TaskLabel';
+import TodayCount from '@/components/TodayCount';
+import Heatmap from '@/components/Heatmap';
 
 export default function App() {
   const [state, setState] = createSignal<TimerState>(INITIAL_STATE);
   const [remaining, setRemaining] = createSignal(0);
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
+  const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+
+  const refreshStats = async () => {
+    setTodayCount(await getTodayCount());
+    setHeatmapData(await getHeatmapData(120));
+  };
 
   onMount(async () => {
     const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
@@ -39,7 +48,10 @@ export default function App() {
     }
 
     setLabel(await getCurrentLabel());
-    setTodayCount(await getTodayCount());
+    await refreshStats();
+
+    browser.storage.onChanged.addListener(refreshStats);
+    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
   });
 
   createEffect(() => {
@@ -132,11 +144,11 @@ export default function App() {
         onSkipLongBreak={skipLongBreak}
       />
 
-      <div class="mt-4 text-sm text-gray-500">
-        🍅 {todayCount()} tomate{todayCount() !== 1 ? 's' : ''} today
-      </div>
+      <TodayCount count={todayCount()} />
 
-      <div class="mt-2 w-full" id="heatmap-container" />
+      <div class="mt-2 w-full">
+        <Heatmap days={120} data={heatmapData()} />
+      </div>
 
       <button
         type="button"
