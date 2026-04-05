@@ -44,6 +44,8 @@ export default defineBackground(() => {
   const BADGE_GOLD = '#CA8A04';
   const BADGE_GRAY = '#6B7280';
   const badgeApi = browser.action;
+  let messageQueue = Promise.resolve<unknown>(undefined);
+  let recoveryDone = false;
 
   const refreshBadge = async (): Promise<void> => {
     const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
@@ -70,7 +72,7 @@ export default defineBackground(() => {
         break;
       }
       case 'BREAK_SUGGESTION': {
-        text = `${state.completedToday}✓`;
+        text = `${todayCount}✓`;
         color = BADGE_GOLD;
         break;
       }
@@ -148,6 +150,15 @@ export default defineBackground(() => {
     }
 
     await refreshBadge();
+  };
+
+  const recoverOnce = async (): Promise<void> => {
+    if (recoveryDone) {
+      return;
+    }
+
+    recoveryDone = true;
+    await recoverFromMissedAlarm();
   };
 
   const handleMessage = async (message: MessageAction) => {
@@ -236,14 +247,23 @@ export default defineBackground(() => {
   };
 
   browser.runtime.onInstalled.addListener(async () => {
-    await recoverFromMissedAlarm();
+    await recoverOnce();
   });
 
   browser.runtime.onStartup.addListener(async () => {
-    await recoverFromMissedAlarm();
+    await recoverOnce();
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+  browser.runtime.onMessage.addListener((message) => {
+    messageQueue = messageQueue
+      .then(() => handleMessage(message as MessageAction))
+      .catch((error) => {
+        console.error('Tomate: message handler error', error);
+        return getTimerState();
+      });
+
+    return messageQueue;
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
