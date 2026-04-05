@@ -6,6 +6,17 @@ import { DEFAULT_CONFIG, type TimerConfig } from '@/lib/types';
 
 const MS_PER_MINUTE = 60_000;
 
+type RangeConfig = { min: number; max: number };
+
+const RANGES: Record<string, RangeConfig> = {
+  work: { min: 1, max: 120 },
+  shortBreak: { min: 1, max: 30 },
+  longBreak: { min: 5, max: 60 },
+};
+
+const isOutOfRange = (value: number, range: RangeConfig): boolean =>
+  Number.isNaN(value) || value < range.min || value > range.max;
+
 export default function App() {
   const [work, setWork] = createSignal(25);
   const [shortBreak, setShortBreak] = createSignal(5);
@@ -55,39 +66,66 @@ export default function App() {
 
         <div class="space-y-4">
           <label class="block">
-            <span class="text-sm font-medium text-gray-700">Work Duration (minutes)</span>
+            <span class="text-sm font-medium text-gray-700">
+              Work Duration <span class="font-normal text-gray-400">({RANGES.work.min}–{RANGES.work.max} min)</span>
+            </span>
             <input
               type="number"
-              min={1}
-              max={120}
+              min={RANGES.work.min}
+              max={RANGES.work.max}
               value={work()}
               onInput={(e) => setWork(Number(e.currentTarget.value))}
-              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              class={`mt-1 block w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
+                isOutOfRange(work(), RANGES.work)
+                  ? 'border-2 border-red-400 focus:border-red-500 focus:ring-red-500'
+                  : 'border border-gray-300 focus:border-red-500 focus:ring-red-500'
+              }`}
             />
+            <Show when={isOutOfRange(work(), RANGES.work)}>
+              <span class="text-xs text-red-500 mt-1">Must be {RANGES.work.min}–{RANGES.work.max} minutes</span>
+            </Show>
           </label>
 
           <label class="block">
-            <span class="text-sm font-medium text-gray-700">Short Break (minutes)</span>
+            <span class="text-sm font-medium text-gray-700">
+              Short Break <span class="font-normal text-gray-400">({RANGES.shortBreak.min}–{RANGES.shortBreak.max} min)</span>
+            </span>
             <input
               type="number"
-              min={1}
-              max={30}
+              min={RANGES.shortBreak.min}
+              max={RANGES.shortBreak.max}
               value={shortBreak()}
               onInput={(e) => setShortBreak(Number(e.currentTarget.value))}
-              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              class={`mt-1 block w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
+                isOutOfRange(shortBreak(), RANGES.shortBreak)
+                  ? 'border-2 border-red-400 focus:border-red-500 focus:ring-red-500'
+                  : 'border border-gray-300 focus:border-red-500 focus:ring-red-500'
+              }`}
             />
+            <Show when={isOutOfRange(shortBreak(), RANGES.shortBreak)}>
+              <span class="text-xs text-red-500 mt-1">Must be {RANGES.shortBreak.min}–{RANGES.shortBreak.max} minutes</span>
+            </Show>
           </label>
 
           <label class="block">
-            <span class="text-sm font-medium text-gray-700">Long Break (minutes)</span>
+            <span class="text-sm font-medium text-gray-700">
+              Long Break <span class="font-normal text-gray-400">({RANGES.longBreak.min}–{RANGES.longBreak.max} min)</span>
+            </span>
             <input
               type="number"
-              min={5}
-              max={60}
+              min={RANGES.longBreak.min}
+              max={RANGES.longBreak.max}
               value={longBreak()}
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
-              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              class={`mt-1 block w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
+                isOutOfRange(longBreak(), RANGES.longBreak)
+                  ? 'border-2 border-red-400 focus:border-red-500 focus:ring-red-500'
+                  : 'border border-gray-300 focus:border-red-500 focus:ring-red-500'
+              }`}
             />
+            <Show when={isOutOfRange(longBreak(), RANGES.longBreak)}>
+              <span class="text-xs text-red-500 mt-1">Must be {RANGES.longBreak.min}–{RANGES.longBreak.max} minutes</span>
+            </Show>
           </label>
         </div>
 
