@@ -16,18 +16,18 @@ export default function App() {
     }
   });
 
-  const startBreak = () => {
-    browser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
+  const startBreak = async () => {
+    await browser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
     window.close();
   };
 
-  const skipBreak = () => {
-    browser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
+  const skipBreak = async () => {
+    await browser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
     window.close();
   };
 
-  const startTimer = () => {
-    browser.runtime.sendMessage({ action: 'START_TIMER' });
+  const startTimer = async () => {
+    await browser.runtime.sendMessage({ action: 'START_TIMER' });
     window.close();
   };
 
