@@ -47,28 +47,14 @@ export const completeTimer = (state: TimerState, config: TimerConfig, now?: numb
 
   switch (state.phase) {
     case 'WORKING': {
-      const completedState = {
+      return {
         ...state,
+        phase: 'BREAK_SUGGESTION',
+        startTime: null,
+        endTime: null,
+        duration: null,
         sessionCount: state.sessionCount + 1,
         completedToday: state.completedToday + 1,
-      };
-
-      if (state.cyclePosition === 3) {
-        return {
-          ...completedState,
-          phase: 'BREAK_SUGGESTION',
-          startTime: null,
-          endTime: null,
-          duration: null,
-        };
-      }
-
-      return {
-        ...completedState,
-        phase: 'SHORT_BREAK',
-        startTime: currentTime,
-        endTime: currentTime + config.shortBreakDuration,
-        duration: config.shortBreakDuration,
       };
     }
     case 'SHORT_BREAK':
@@ -86,16 +72,26 @@ export const completeTimer = (state: TimerState, config: TimerConfig, now?: numb
   }
 };
 
-export const abandonTimer = (state: TimerState): TimerState => {
+export const pauseTimer = (state: TimerState, now?: number): TimerState => {
   if (!isActivePhase(state.phase)) {
     return state;
   }
 
-  return toIdleState(state);
+  const currentTime = getNow(now);
+  const remaining = Math.max(0, (state.endTime ?? 0) - currentTime);
+
+  return {
+    ...state,
+    phase: 'PAUSED',
+    pausedFromPhase: state.phase,
+    pausedRemaining: remaining,
+    startTime: null,
+    endTime: null,
+  };
 };
 
-export const acceptLongBreak = (state: TimerState, config: TimerConfig, now?: number): TimerState => {
-  if (state.phase !== 'BREAK_SUGGESTION') {
+export const resumeTimer = (state: TimerState, now?: number): TimerState => {
+  if (state.phase !== 'PAUSED' || state.pausedFromPhase === null || state.pausedRemaining === null) {
     return state;
   }
 
@@ -103,10 +99,37 @@ export const acceptLongBreak = (state: TimerState, config: TimerConfig, now?: nu
 
   return {
     ...state,
-    phase: 'LONG_BREAK',
+    phase: state.pausedFromPhase,
     startTime: currentTime,
-    endTime: currentTime + config.longBreakDuration,
-    duration: config.longBreakDuration,
+    endTime: currentTime + state.pausedRemaining,
+    pausedFromPhase: null,
+    pausedRemaining: null,
+  };
+};
+
+export const abandonTimer = (state: TimerState): TimerState => {
+  if (!isActivePhase(state.phase) && state.phase !== 'PAUSED') {
+    return state;
+  }
+
+  return toIdleState(state);
+};
+
+export const acceptBreak = (state: TimerState, config: TimerConfig, now?: number): TimerState => {
+  if (state.phase !== 'BREAK_SUGGESTION') {
+    return state;
+  }
+
+  const currentTime = getNow(now);
+  const isLong = state.cyclePosition === 3;
+  const breakDuration = isLong ? config.longBreakDuration : config.shortBreakDuration;
+
+  return {
+    ...state,
+    phase: isLong ? 'LONG_BREAK' : 'SHORT_BREAK',
+    startTime: currentTime,
+    endTime: currentTime + breakDuration,
+    duration: breakDuration,
   };
 };
 
@@ -155,5 +178,9 @@ export const recoverMissedAlarm = (
   return completeTimer(state, config, currentTime);
 };
 
-export const getRemainingMs = (state: TimerState, now?: number): number =>
-  Math.max(0, (state.endTime ?? 0) - getNow(now));
+export const getRemainingMs = (state: TimerState, now?: number): number => {
+  if (state.phase === 'PAUSED') {
+    return state.pausedRemaining ?? 0;
+  }
+  return Math.max(0, (state.endTime ?? 0) - getNow(now));
+};

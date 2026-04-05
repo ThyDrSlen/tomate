@@ -1,13 +1,7 @@
 import type { CompletedSession } from './types';
+import { toDateKey } from './storage';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-const toDateKey = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 export const computeTotalCount = (sessions: CompletedSession[]): number => sessions.length;
 
@@ -15,7 +9,7 @@ export const computeWeekCount = (sessions: CompletedSession[]): number => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const weekAgo = new Date(today.getTime() - 6 * DAY_MS);
-  const cutoff = toDateKey(weekAgo);
+  const cutoff = toDateKey(weekAgo.getTime());
 
   return sessions.filter((s) => s.date >= cutoff).length;
 };
@@ -49,19 +43,19 @@ export const computeStreak = (sessions: CompletedSession[]): number => {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayKey = toDateKey(today);
+  const todayKey = toDateKey(today.getTime());
 
   let streak = 0;
   let checkDate = new Date(today);
 
   if (!sessionDates.has(todayKey)) {
     checkDate.setDate(checkDate.getDate() - 1);
-    if (!sessionDates.has(toDateKey(checkDate))) {
+    if (!sessionDates.has(toDateKey(checkDate.getTime()))) {
       return 0;
     }
   }
 
-  while (sessionDates.has(toDateKey(checkDate))) {
+  while (sessionDates.has(toDateKey(checkDate.getTime()))) {
     streak++;
     checkDate.setDate(checkDate.getDate() - 1);
   }

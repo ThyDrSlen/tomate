@@ -10,6 +10,7 @@ import {
   getTimerState,
   setCurrentLabel,
   setTimerState,
+  toDateKey,
 } from '@/lib/storage';
 import { DEFAULT_CONFIG, INITIAL_STATE, type TimerConfig, type TimerState } from '@/lib/types';
 
@@ -30,10 +31,12 @@ const createConfig = (overrides: Partial<TimerConfig> = {}): TimerConfig => ({
 });
 
 const initBackground = async (): Promise<void> => {
+  vi.resetModules();
+
   (globalThis as typeof globalThis & { defineBackground: (main?: () => void | Promise<void>) => { main?: () => void | Promise<void> } }).defineBackground =
     (main) => ({ main });
 
-  const background = (await import(`../background?test=${Math.random()}`)) as BackgroundModule;
+  const background = (await import('../background')) as BackgroundModule;
   await background.default.main?.();
 };
 
@@ -45,6 +48,7 @@ describe('background service worker', () => {
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+    fakeBrowser.tabs.create = vi.fn().mockResolvedValue({ id: 1 });
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
@@ -116,10 +120,7 @@ describe('background service worker', () => {
 
     await expect(getTimerState()).resolves.toEqual(
       createState({
-        phase: 'SHORT_BREAK',
-        startTime: 5_000,
-        endTime: 5_000 + DEFAULT_CONFIG.shortBreakDuration,
-        duration: DEFAULT_CONFIG.shortBreakDuration,
+        phase: 'BREAK_SUGGESTION',
         sessionCount: 1,
         completedToday: 1,
       }),
@@ -131,23 +132,17 @@ describe('background service worker', () => {
         label: 'Focus block',
         startTime: 1_000,
         endTime: 5_000,
-        date: '1970-01-01',
+        date: toDateKey(1_000),
         duration: 3_000,
       },
     ]);
 
-    const notifications = await fakeBrowser.notifications.getAll();
-    expect(Object.values(notifications)).toContainEqual(
+    expect(fakeBrowser.tabs.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: '🍅 Tomate Complete!',
-        message: "Time for a break. You've done 1 tomate(s) today.",
+        url: expect.stringContaining('/complete.html?type=work&count=1'),
       }),
     );
-    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
-      expect.objectContaining({
-        scheduledTime: 5_000 + DEFAULT_CONFIG.shortBreakDuration,
-      }),
-    );
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toBeUndefined();
   });
 
   it('completes a short break alarm and returns to idle with a notification', async () => {
@@ -175,11 +170,9 @@ describe('background service worker', () => {
     );
     await expect(fakeBrowser.alarms.get('badge-refresh')).resolves.toBeUndefined();
 
-    const notifications = await fakeBrowser.notifications.getAll();
-    expect(Object.values(notifications)).toContainEqual(
+    expect(fakeBrowser.tabs.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Break's Over",
-        message: 'Ready for another tomate?',
+        url: expect.stringContaining('/complete.html?type=break'),
       }),
     );
   });
@@ -201,10 +194,7 @@ describe('background service worker', () => {
 
     await expect(getTimerState()).resolves.toEqual(
       createState({
-        phase: 'SHORT_BREAK',
-        startTime: 10_000,
-        endTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
-        duration: DEFAULT_CONFIG.shortBreakDuration,
+        phase: 'BREAK_SUGGESTION',
         sessionCount: 1,
         completedToday: 1,
       }),
@@ -216,15 +206,11 @@ describe('background service worker', () => {
         label: 'Recovered work',
         startTime: 1_000,
         endTime: 10_000,
-        date: '1970-01-01',
+        date: toDateKey(1_000),
         duration: 1_000,
       },
     ]);
-    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
-      expect.objectContaining({
-        scheduledTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
-      }),
-    );
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toBeUndefined();
   });
 
   it('returns the current timer state for GET_STATE', async () => {
@@ -269,5 +255,51 @@ describe('background service worker', () => {
         scheduledTime: 25_000,
       }),
     );
+  });
+
+  it('pauses a working timer, clears alarms, and resumes with a new alarm', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 5_000,
+        endTime: 15_000,
+        duration: 10_000,
+      }),
+    );
+    await initBackground();
+    await fakeBrowser.alarms.create('tomate-timer', { when: 15_000 });
+    await fakeBrowser.alarms.create('badge-refresh', { periodInMinutes: 1 });
+
+    const pauseResponse = await fakeBrowser.runtime.sendMessage({ action: 'PAUSE_TIMER' });
+
+    expect(pauseResponse).toEqual(
+      createState({
+        phase: 'PAUSED',
+        startTime: null,
+        endTime: null,
+        duration: 10_000,
+        pausedFromPhase: 'WORKING',
+        pausedRemaining: 5_000,
+      }),
+    );
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toBeUndefined();
+    await expect(fakeBrowser.alarms.get('badge-refresh')).resolves.toBeUndefined();
+
+    vi.spyOn(Date, 'now').mockReturnValue(30_000);
+    const resumeResponse = await fakeBrowser.runtime.sendMessage({ action: 'RESUME_TIMER' });
+
+    expect(resumeResponse).toEqual(
+      createState({
+        phase: 'WORKING',
+        startTime: 30_000,
+        endTime: 35_000,
+        duration: 10_000,
+      }),
+    );
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
+      expect.objectContaining({ scheduledTime: 35_000 }),
+    );
+    await expect(fakeBrowser.alarms.get('badge-refresh')).resolves.toBeDefined();
   });
 });

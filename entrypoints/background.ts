@@ -2,12 +2,14 @@ import { browser } from 'wxt/browser';
 
 import {
   abandonTimer,
-  acceptLongBreak,
+  acceptBreak,
   adjustDuration,
   completeTimer,
   getRemainingMs,
   isActivePhase,
+  pauseTimer,
   recoverMissedAlarm,
+  resumeTimer,
   skipLongBreak,
   startTimer,
 } from '@/lib/timer';
@@ -26,6 +28,8 @@ import type { CompletedSession, TimerConfig } from '@/lib/types';
 
 export type MessageAction =
   | { action: 'START_TIMER' }
+  | { action: 'PAUSE_TIMER' }
+  | { action: 'RESUME_TIMER' }
   | { action: 'ABANDON_TIMER' }
   | { action: 'GET_STATE' }
   | { action: 'ACCEPT_LONG_BREAK' }
@@ -38,6 +42,7 @@ export default defineBackground(() => {
   const BADGE_RED = '#DC2626';
   const BADGE_GREEN = '#16A34A';
   const BADGE_GOLD = '#CA8A04';
+  const BADGE_GRAY = '#6B7280';
   const badgeApi = browser.action;
 
   const refreshBadge = async (): Promise<void> => {
@@ -58,6 +63,12 @@ export default defineBackground(() => {
         color = BADGE_GREEN;
         break;
       }
+      case 'PAUSED': {
+        const pausedMin = Math.ceil(getRemainingMs(state) / 60_000);
+        text = `❚❚${pausedMin}`;
+        color = BADGE_GRAY;
+        break;
+      }
       case 'BREAK_SUGGESTION': {
         text = `${state.completedToday}✓`;
         color = BADGE_GOLD;
@@ -65,8 +76,8 @@ export default defineBackground(() => {
       }
       case 'IDLE':
       default: {
-        text = todayCount > 0 ? String(todayCount) : '';
-        color = BADGE_RED;
+        text = todayCount > 0 ? `${todayCount}✓` : '';
+        color = BADGE_GREEN;
         break;
       }
     }
@@ -155,6 +166,25 @@ export default defineBackground(() => {
         await refreshBadge();
         return nextState;
       }
+      case 'PAUSE_TIMER': {
+        const nextState = pauseTimer(state);
+        await setTimerState(nextState);
+        await clearActiveAlarms();
+        await refreshBadge();
+        return nextState;
+      }
+      case 'RESUME_TIMER': {
+        const nextState = resumeTimer(state);
+        await setTimerState(nextState);
+
+        if (nextState.endTime !== null) {
+          await scheduleTimerAlarm(nextState.endTime);
+          await startBadgeRefresh();
+        }
+
+        await refreshBadge();
+        return nextState;
+      }
       case 'ABANDON_TIMER': {
         const nextState = abandonTimer(state);
         await setTimerState(nextState);
@@ -166,7 +196,7 @@ export default defineBackground(() => {
         return state;
       }
       case 'ACCEPT_LONG_BREAK': {
-        const nextState = acceptLongBreak(state, config);
+        const nextState = acceptBreak(state, config);
         await setTimerState(nextState);
 
         if (nextState.endTime !== null) {
@@ -231,20 +261,18 @@ export default defineBackground(() => {
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+
+      const isLong = completed.cyclePosition === 3 ? '1' : '0';
+      await browser.tabs.create({
+        url: browser.runtime.getURL(
+          `/complete.html?type=work&count=${completed.completedToday}&long=${isLong}` as '/popup.html',
+        ),
       });
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+      await browser.tabs.create({
+        url: browser.runtime.getURL('/complete.html?type=break' as '/popup.html'),
       });
     }
 

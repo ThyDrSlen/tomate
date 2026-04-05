@@ -19,11 +19,22 @@ export default function App() {
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
   });
 
+  const clamp = (value: number, min: number, max: number): number =>
+    Math.max(min, Math.min(max, Math.round(value) || min));
+
   const handleSave = async () => {
+    const clampedWork = clamp(work(), 1, 120);
+    const clampedShort = clamp(shortBreak(), 1, 30);
+    const clampedLong = clamp(longBreak(), 5, 60);
+
+    setWork(clampedWork);
+    setShortBreak(clampedShort);
+    setLongBreak(clampedLong);
+
     const config: TimerConfig = {
-      workDuration: work() * MS_PER_MINUTE,
-      shortBreakDuration: shortBreak() * MS_PER_MINUTE,
-      longBreakDuration: longBreak() * MS_PER_MINUTE,
+      workDuration: clampedWork * MS_PER_MINUTE,
+      shortBreakDuration: clampedShort * MS_PER_MINUTE,
+      longBreakDuration: clampedLong * MS_PER_MINUTE,
     };
     await setConfig(config);
     await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });

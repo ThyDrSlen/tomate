@@ -10,6 +10,7 @@ const PHASE_COLORS: Record<TimerPhase, string> = {
   WORKING: '#DC2626',
   SHORT_BREAK: '#16A34A',
   LONG_BREAK: '#16A34A',
+  PAUSED: '#6B7280',
   BREAK_SUGGESTION: '#CA8A04',
 };
 

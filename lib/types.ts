@@ -1,4 +1,4 @@
-export type TimerPhase = 'IDLE' | 'WORKING' | 'SHORT_BREAK' | 'LONG_BREAK' | 'BREAK_SUGGESTION';
+export type TimerPhase = 'IDLE' | 'WORKING' | 'SHORT_BREAK' | 'LONG_BREAK' | 'PAUSED' | 'BREAK_SUGGESTION';
 
 export type TimerConfig = {
   workDuration: number;
@@ -14,6 +14,8 @@ export type TimerState = {
   sessionCount: number;
   cyclePosition: number;
   completedToday: number;
+  pausedFromPhase: TimerPhase | null;
+  pausedRemaining: number | null;
 };
 
 export type CompletedSession = {
@@ -39,4 +41,6 @@ export const INITIAL_STATE: TimerState = {
   sessionCount: 0,
   cyclePosition: 0,
   completedToday: 0,
+  pausedFromPhase: null,
+  pausedRemaining: null,
 };

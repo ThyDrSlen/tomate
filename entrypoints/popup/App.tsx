@@ -1,11 +1,8 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Show, Switch, Match } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
-import { playCelebration } from '@/lib/celebration';
 import {
-  getPendingCelebration,
-  setPendingCelebration,
   getCurrentLabel,
   setCurrentLabel,
   getTodayCount,
@@ -25,6 +22,16 @@ export default function App() {
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [ready, setReady] = createSignal(false);
+
+  const sendAction = async (message: Record<string, unknown>): Promise<TimerState | null> => {
+    try {
+      return (await browser.runtime.sendMessage(message)) as TimerState;
+    } catch (error) {
+      console.warn('Tomate: background message failed', error);
+      return null;
+    }
+  };
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
@@ -32,29 +39,32 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
-
-    const pending = await getPendingCelebration();
-    if (pending) {
-      playCelebration('work');
-      await setPendingCelebration(false);
-    }
+    const currentState = await sendAction({ action: 'GET_STATE' });
+    if (currentState) setState(currentState);
 
     setLabel(await getCurrentLabel());
     await refreshStats();
+    setReady(true);
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const onStorageChanged = (changes: Record<string, unknown>) => {
+      if ('sessions' in changes) refreshStats();
+    };
+    browser.storage.onChanged.addListener(onStorageChanged);
+    onCleanup(() => browser.storage.onChanged.removeListener(onStorageChanged));
   });
 
   createEffect(() => {
     const s = state();
     if (isActivePhase(s.phase) && s.endTime) {
-      const tick = () => setRemaining(Math.max(0, s.endTime! - Date.now()));
+      let rafId: number;
+      const tick = () => {
+        setRemaining(Math.max(0, s.endTime! - Date.now()));
+        rafId = requestAnimationFrame(tick);
+      };
       tick();
-      const id = setInterval(tick, 1000);
-      onCleanup(() => clearInterval(id));
+      onCleanup(() => cancelAnimationFrame(rafId));
+    } else if (s.phase === 'PAUSED' && s.pausedRemaining !== null) {
+      setRemaining(s.pausedRemaining);
     } else {
       setRemaining(0);
     }
@@ -70,28 +80,43 @@ export default function App() {
 
   const progress = () => {
     const s = state();
+    if (s.phase === 'PAUSED' && s.duration && s.pausedRemaining !== null) {
+      return 1 - s.pausedRemaining / s.duration;
+    }
     if (!s.duration || !isActivePhase(s.phase)) return 0;
     return 1 - remaining() / s.duration;
   };
 
   const startTimer = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'START_TIMER' });
-    setState(newState as TimerState);
+    const newState = await sendAction({ action: 'START_TIMER' });
+    if (newState) setState(newState);
+  };
+
+  const pauseTimer = async () => {
+    const newState = await sendAction({ action: 'PAUSE_TIMER' });
+    if (newState) setState(newState);
+  };
+
+  const resumeTimer = async () => {
+    const newState = await sendAction({ action: 'RESUME_TIMER' });
+    if (newState) setState(newState);
   };
 
   const abandonTimer = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'ABANDON_TIMER' });
-    setState(newState as TimerState);
+    const phase = state().phase;
+    if ((phase === 'WORKING' || phase === 'PAUSED') && !window.confirm('Abandon this tomate?')) return;
+    const newState = await sendAction({ action: 'ABANDON_TIMER' });
+    if (newState) setState(newState);
   };
 
   const acceptLongBreak = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
-    setState(newState as TimerState);
+    const newState = await sendAction({ action: 'ACCEPT_LONG_BREAK' });
+    if (newState) setState(newState);
   };
 
   const skipLongBreak = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
-    setState(newState as TimerState);
+    const newState = await sendAction({ action: 'SKIP_LONG_BREAK' });
+    if (newState) setState(newState);
   };
 
   let labelTimeout: ReturnType<typeof setTimeout>;
@@ -115,42 +140,52 @@ export default function App() {
         </button>
       </div>
 
-      <TimerRing progress={progress()} phase={state().phase} />
-      <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
-
-      <div class="text-sm text-gray-500 mt-1">
-        <Switch>
-          <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
-          <Match when={state().phase === 'WORKING'}>Working</Match>
-          <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
-          <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
-          <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
-        </Switch>
-      </div>
-
-      <TaskLabel value={label()} onChange={handleLabelChange} />
-
-      <Controls
-        phase={state().phase}
-        onStart={startTimer}
-        onAbandon={abandonTimer}
-        onAcceptLongBreak={acceptLongBreak}
-        onSkipLongBreak={skipLongBreak}
-      />
-
-      <TodayCount count={todayCount()} />
-
-      <div class="mt-2 w-full">
-        <Heatmap days={120} data={heatmapData()} />
-      </div>
-
-      <button
-        type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
-        class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
+      <Show
+        when={ready()}
+        fallback={
+          <div class="flex-1 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+        }
       >
-        View all stats →
-      </button>
+        <TimerRing progress={progress()} phase={state().phase} />
+        <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
+
+        <div class="text-sm text-gray-500 mt-1">
+          <Switch>
+            <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
+            <Match when={state().phase === 'WORKING'}>Working</Match>
+            <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
+            <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
+            <Match when={state().phase === 'PAUSED'}>Paused</Match>
+            <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
+          </Switch>
+        </div>
+
+        <TaskLabel value={label()} onChange={handleLabelChange} />
+
+        <Controls
+          phase={state().phase}
+          onStart={startTimer}
+          onPause={pauseTimer}
+          onResume={resumeTimer}
+          onAbandon={abandonTimer}
+          onAcceptLongBreak={acceptLongBreak}
+          onSkipLongBreak={skipLongBreak}
+        />
+
+        <TodayCount count={todayCount()} />
+
+        <div class="mt-2 w-full">
+          <Heatmap days={120} data={heatmapData()} />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+          class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
+        >
+          View all stats →
+        </button>
+      </Show>
     </div>
   );
 }
