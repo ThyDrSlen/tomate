@@ -104,6 +104,20 @@ describe('storage helpers', () => {
     await expect(getSessionHistory(2)).resolves.toEqual([withinRange, today]);
   });
 
+  it('returns an empty history when zero days are requested', async () => {
+    await addCompletedSession(createSession(new Date(2026, 2, 19, 9, 0, 0).getTime()));
+    await addCompletedSession(createSession(new Date(2026, 2, 20, 9, 0, 0).getTime()));
+
+    await expect(getSessionHistory(0)).resolves.toEqual([]);
+  });
+
+  it('returns an empty history when negative days are requested', async () => {
+    await addCompletedSession(createSession(new Date(2026, 2, 19, 9, 0, 0).getTime()));
+    await addCompletedSession(createSession(new Date(2026, 2, 20, 9, 0, 0).getTime()));
+
+    await expect(getSessionHistory(-1)).resolves.toEqual([]);
+  });
+
   it('aggregates heatmap counts by local date key', async () => {
     const dateA = new Date(2026, 2, 15, 9, 0, 0).getTime();
     const dateB = new Date(2026, 2, 16, 14, 0, 0).getTime();
@@ -117,6 +131,13 @@ describe('storage helpers', () => {
       [toDateKey(dateA)]: 3,
       [toDateKey(dateB)]: 1,
     });
+  });
+
+  it('returns an empty heatmap when zero days are requested', async () => {
+    await addCompletedSession(createSession(new Date(2026, 2, 19, 9, 0, 0).getTime()));
+    await addCompletedSession(createSession(new Date(2026, 2, 20, 9, 0, 0).getTime()));
+
+    await expect(getHeatmapData(0)).resolves.toEqual({});
   });
 
   it('counts only todays sessions', async () => {

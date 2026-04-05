@@ -32,6 +32,18 @@ describe('celebration', () => {
     vi.unstubAllGlobals();
   });
 
+  it('fires confetti for a break celebration', () => {
+    vi.stubGlobal('Audio', vi.fn(() => ({ play: vi.fn() })));
+
+    playCelebration('break');
+
+    expect(confetti).toHaveBeenCalledWith(
+      expect.objectContaining({ particleCount: 50, spread: 60 }),
+    );
+
+    vi.unstubAllGlobals();
+  });
+
   it('logs a warning when audio playback fails', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.stubGlobal(

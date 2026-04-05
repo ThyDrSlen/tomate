@@ -226,6 +226,104 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
+  it('accepts a suggested long break, schedules the alarm, and shows a break badge', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(20_000);
+    const config = createConfig({ longBreakDuration: 1_800_000 });
+    await fakeBrowser.storage.local.set({ config });
+    await setTimerState(
+      createState({
+        phase: 'BREAK_SUGGESTION',
+        cyclePosition: 3,
+        completedToday: 4,
+        sessionCount: 4,
+      }),
+    );
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
+
+    expect(response).toEqual(
+      createState({
+        phase: 'LONG_BREAK',
+        startTime: 20_000,
+        endTime: 20_000 + config.longBreakDuration,
+        duration: config.longBreakDuration,
+        cyclePosition: 3,
+        completedToday: 4,
+        sessionCount: 4,
+      }),
+    );
+    await expect(getTimerState()).resolves.toEqual(response);
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
+      expect.objectContaining({ scheduledTime: 20_000 + config.longBreakDuration }),
+    );
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: 'BRK' });
+    expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenCalledWith({ color: '#16A34A' });
+  });
+
+  it('skips a suggested long break, resets cycle position, and clears alarms', async () => {
+    await setTimerState(
+      createState({
+        phase: 'BREAK_SUGGESTION',
+        cyclePosition: 3,
+        completedToday: 4,
+        sessionCount: 4,
+      }),
+    );
+    await initBackground();
+    await fakeBrowser.alarms.create('tomate-timer', { when: 50_000 });
+    await fakeBrowser.alarms.create('badge-refresh', { periodInMinutes: 1 });
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
+
+    expect(response).toEqual(
+      createState({
+        cyclePosition: 0,
+        completedToday: 4,
+        sessionCount: 4,
+      }),
+    );
+    await expect(getTimerState()).resolves.toEqual(response);
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toBeUndefined();
+    await expect(fakeBrowser.alarms.get('badge-refresh')).resolves.toBeUndefined();
+  });
+
+  it('shows the break badge while a short break is active', async () => {
+    await setTimerState(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: 1_000,
+        endTime: 6_000,
+        duration: 5_000,
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 2_000 });
+
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: 'BRK' });
+    expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenCalledWith({ color: '#16A34A' });
+  });
+
+  it('shows a pause indicator badge while paused', async () => {
+    await setTimerState(
+      createState({
+        phase: 'PAUSED',
+        duration: 1_500_000,
+        pausedFromPhase: 'WORKING',
+        pausedRemaining: 300_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 2_000 });
+
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: expect.stringContaining('❚❚') });
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: '❚❚5' });
+  });
+
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });

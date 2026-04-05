@@ -89,6 +89,46 @@ describe('timer state machine', () => {
     expect(state.duration).toBe(DEFAULT_CONFIG.workDuration);
   });
 
+  it('does not start a timer from non-idle states', () => {
+    const config = createConfig();
+    const states = [
+      createState({ phase: 'WORKING', startTime: 1_000, endTime: 2_000, duration: 1_000 }),
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: 2_000,
+        endTime: 2_500,
+        duration: 500,
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+      createState({
+        phase: 'LONG_BREAK',
+        startTime: 3_000,
+        endTime: 3_500,
+        duration: 500,
+        sessionCount: 4,
+        cyclePosition: 3,
+        completedToday: 4,
+      }),
+      createState({
+        phase: 'PAUSED',
+        duration: 1_000,
+        pausedFromPhase: 'WORKING',
+        pausedRemaining: 500,
+      }),
+      createState({
+        phase: 'BREAK_SUGGESTION',
+        sessionCount: 4,
+        cyclePosition: 3,
+        completedToday: 4,
+      }),
+    ];
+
+    for (const state of states) {
+      expect(startTimer(state, config, 10_000)).toEqual(state);
+    }
+  });
+
   it('abandons a work session without changing counters', () => {
     const state = createState({
       phase: 'WORKING',
@@ -241,6 +281,34 @@ describe('timer state machine', () => {
 
   it('returns null when recovering a missed alarm from idle', () => {
     expect(recoverMissedAlarm(createState(), DEFAULT_CONFIG, 5_000)).toBeNull();
+  });
+
+  it('does not complete a timer from idle', () => {
+    const state = createState();
+
+    expect(completeTimer(state, DEFAULT_CONFIG, 5_000)).toEqual(state);
+  });
+
+  it('does not complete a timer from paused', () => {
+    const state = createState({
+      phase: 'PAUSED',
+      duration: 10_000,
+      pausedFromPhase: 'WORKING',
+      pausedRemaining: 5_000,
+    });
+
+    expect(completeTimer(state, DEFAULT_CONFIG, 5_000)).toEqual(state);
+  });
+
+  it('returns null when recovering a missed alarm before the end time', () => {
+    const state = createState({
+      phase: 'WORKING',
+      startTime: 1_000,
+      endTime: 10_000,
+      duration: 9_000,
+    });
+
+    expect(recoverMissedAlarm(state, createConfig(), 5_000)).toBeNull();
   });
 
   it('returns correct remaining milliseconds', () => {
