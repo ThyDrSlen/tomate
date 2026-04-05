@@ -169,6 +169,8 @@ export default function Heatmap(props: HeatmapProps) {
 
         {/* Heatmap cells - CSS Grid: 7 rows, auto columns */}
         <div
+          role="img"
+          aria-label="Pomodoro activity heatmap"
           class="grid"
           style={{
             "grid-template-rows": `repeat(7, ${cellSize()}px)`,
@@ -183,6 +185,7 @@ export default function Heatmap(props: HeatmapProps) {
                 {(cell) =>
                   cell ? (
                     <div
+                      role="presentation"
                       class="rounded-sm"
                       style={{
                         width: `${cellSize()}px`,
@@ -190,6 +193,7 @@ export default function Heatmap(props: HeatmapProps) {
                         "background-color": getIntensityColor(cell.count),
                       }}
                       title={tooltipText(cell)}
+                      aria-label={tooltipText(cell)}
                     />
                   ) : (
                     <div
