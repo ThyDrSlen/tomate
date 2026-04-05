@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Show, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Show, Switch, Match, For } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -23,12 +23,16 @@ export default function App() {
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
   const [ready, setReady] = createSignal(false);
+  const [bgError, setBgError] = createSignal(false);
+  const [confirmingAbandon, setConfirmingAbandon] = createSignal(false);
 
   const sendAction = async (message: Record<string, unknown>): Promise<TimerState | null> => {
     try {
+      setBgError(false);
       return (await browser.runtime.sendMessage(message)) as TimerState;
     } catch (error) {
       console.warn('Tomate: background message failed', error);
+      setBgError(true);
       return null;
     }
   };
@@ -46,11 +50,29 @@ export default function App() {
     await refreshStats();
     setReady(true);
 
-    const onStorageChanged = (changes: Record<string, unknown>) => {
+    const onStorageChanged: Parameters<typeof browser.storage.onChanged.addListener>[0] = (changes) => {
       if ('sessions' in changes) refreshStats();
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return;
+
+      const phase = state().phase;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (phase === 'IDLE') startTimer();
+        else if (phase === 'WORKING' || phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') pauseTimer();
+        else if (phase === 'PAUSED') resumeTimer();
+      } else if (e.code === 'Escape') {
+        if (confirmingAbandon()) cancelAbandon();
+        else void abandonTimer();
+      }
+    };
+
     browser.storage.onChanged.addListener(onStorageChanged);
+    document.addEventListener('keydown', handleKeyDown);
     onCleanup(() => browser.storage.onChanged.removeListener(onStorageChanged));
+    onCleanup(() => document.removeEventListener('keydown', handleKeyDown));
+    onCleanup(() => clearTimeout(labelTimeout));
   });
 
   createEffect(() => {
@@ -58,7 +80,10 @@ export default function App() {
     if (isActivePhase(s.phase) && s.endTime) {
       let rafId: number;
       const tick = () => {
-        setRemaining(Math.max(0, s.endTime! - Date.now()));
+        const current = state();
+        if (current.endTime) {
+          setRemaining(Math.max(0, current.endTime - Date.now()));
+        }
         rafId = requestAnimationFrame(tick);
       };
       tick();
@@ -104,10 +129,18 @@ export default function App() {
 
   const abandonTimer = async () => {
     const phase = state().phase;
-    if ((phase === 'WORKING' || phase === 'PAUSED') && !window.confirm('Abandon this tomate?')) return;
+    if (phase === 'WORKING' || phase === 'PAUSED') {
+      if (!confirmingAbandon()) {
+        setConfirmingAbandon(true);
+        return;
+      }
+    }
+    setConfirmingAbandon(false);
     const newState = await sendAction({ action: 'ABANDON_TIMER' });
     if (newState) setState(newState);
   };
+
+  const cancelAbandon = () => setConfirmingAbandon(false);
 
   const acceptLongBreak = async () => {
     const newState = await sendAction({ action: 'ACCEPT_LONG_BREAK' });
@@ -140,6 +173,12 @@ export default function App() {
         </button>
       </div>
 
+      <Show when={bgError()}>
+        <div class="w-full text-center text-xs text-red-500 bg-red-100 rounded px-2 py-1 mb-2">
+          Unable to reach timer — try reopening the popup
+        </div>
+      </Show>
+
       <Show
         when={ready()}
         fallback={
@@ -160,7 +199,45 @@ export default function App() {
           </Switch>
         </div>
 
+        <Show when={state().phase !== 'IDLE' || state().cyclePosition > 0}>
+          <div class="flex gap-1 mt-1 justify-center">
+            <For each={[0, 1, 2, 3]}>
+              {(i) => (
+                <div
+                  class={`w-2 h-2 rounded-full ${
+                    i < state().cyclePosition || (state().phase !== 'IDLE' && i === state().cyclePosition)
+                      ? 'bg-red-400'
+                      : 'bg-gray-300'
+                  }`}
+                />
+              )}
+            </For>
+          </div>
+        </Show>
+
         <TaskLabel value={label()} onChange={handleLabelChange} />
+
+        <Show when={confirmingAbandon()}>
+          <div class="mt-3 text-sm text-center text-red-600">
+            <span>Abandon this tomate?</span>
+            <div class="flex gap-2 justify-center mt-2">
+              <button
+                type="button"
+                onClick={() => void abandonTimer()}
+                class="px-4 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+              >
+                Yes, abandon
+              </button>
+              <button
+                type="button"
+                onClick={cancelAbandon}
+                class="px-4 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Show>
 
         <Controls
           phase={state().phase}
