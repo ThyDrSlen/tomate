@@ -1,6 +1,7 @@
 import { createResource, For } from 'solid-js';
 
 import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
+import type { CompletedSession } from '@/lib/types';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
 
 import Heatmap from '@/components/Heatmap';
@@ -77,7 +78,54 @@ export default function App() {
             <span>More</span>
           </div>
         </div>
+        <div class="mt-6 flex gap-3">
+          <button
+            type="button"
+            onClick={() => exportData('csv')}
+            class="text-xs text-gray-500 hover:text-red-600 underline"
+          >
+            Export CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => exportData('json')}
+            class="text-xs text-gray-500 hover:text-red-600 underline"
+          >
+            Export JSON
+          </button>
+        </div>
       </div>
     </div>
   );
+
+  function exportData(format: 'csv' | 'json') {
+    const data = sessions();
+    if (!data || data.length === 0) return;
+
+    let content: string;
+    let mimeType: string;
+    let ext: string;
+
+    if (format === 'csv') {
+      const header = 'date,label,startTime,endTime,duration_minutes';
+      const rows = data.map((s: CompletedSession) =>
+        `${s.date},"${s.label.replace(/"/g, '""')}",${new Date(s.startTime).toISOString()},${new Date(s.endTime).toISOString()},${Math.round(s.duration / 60000)}`
+      );
+      content = [header, ...rows].join('\n');
+      mimeType = 'text/csv';
+      ext = 'csv';
+    } else {
+      content = JSON.stringify(data, null, 2);
+      mimeType = 'application/json';
+      ext = 'json';
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tomate-sessions.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 }

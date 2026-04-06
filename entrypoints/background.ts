@@ -262,6 +262,13 @@ export default defineBackground(() => {
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
 
+      await browser.notifications.create('tomate-work-complete', {
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+        title: 'Tomate complete!',
+        message: `Great work! You've completed ${completed.completedToday} tomate${completed.completedToday === 1 ? '' : 's'} today.`,
+      });
+
       const isLong = completed.cyclePosition === 3 ? '1' : '0';
       await browser.tabs.create({
         url: browser.runtime.getURL(
@@ -271,6 +278,13 @@ export default defineBackground(() => {
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
+      await browser.notifications.create('tomate-break-complete', {
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+        title: 'Break over!',
+        message: 'Time to get back to work.',
+      });
+
       await browser.tabs.create({
         url: browser.runtime.getURL('/complete.html?type=break' as '/popup.html'),
       });
