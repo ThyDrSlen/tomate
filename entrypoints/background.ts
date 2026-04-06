@@ -40,6 +40,22 @@ export default defineBackground(() => {
   const BADGE_GOLD = '#CA8A04';
   const badgeApi = browser.action;
 
+  const isValidConfig = (config: unknown): config is TimerConfig => {
+    if (typeof config !== 'object' || config === null) return false;
+    const c = config as Record<string, unknown>;
+    return (
+      typeof c.workDuration === 'number' &&
+      typeof c.shortBreakDuration === 'number' &&
+      typeof c.longBreakDuration === 'number' &&
+      Number.isFinite(c.workDuration) &&
+      Number.isFinite(c.shortBreakDuration) &&
+      Number.isFinite(c.longBreakDuration) &&
+      c.workDuration > 0 &&
+      c.shortBreakDuration > 0 &&
+      c.longBreakDuration > 0
+    );
+  };
+
   const refreshBadge = async (): Promise<void> => {
     const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
 
@@ -123,11 +139,11 @@ export default defineBackground(() => {
       return;
     }
 
-    await setTimerState(recovered);
-
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
     }
+
+    await setTimerState(recovered);
 
     if (recovered.phase === 'SHORT_BREAK' && recovered.endTime !== null) {
       await scheduleTimerAlarm(recovered.endTime);
@@ -185,6 +201,10 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
+        if (!isValidConfig(message.config)) {
+          return state;
+        }
+
         await setConfig(message.config);
         const nextState = adjustDuration(state, message.config);
         await setTimerState(nextState);
@@ -227,7 +247,6 @@ export default defineBackground(() => {
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
-    await setTimerState(completed);
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
@@ -238,6 +257,8 @@ export default defineBackground(() => {
         message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
       });
     }
+
+    await setTimerState(completed);
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
       await browser.notifications.create({
