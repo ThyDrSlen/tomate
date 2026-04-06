@@ -251,11 +251,11 @@ describe('timer state machine', () => {
   });
 
   it('uses the default 25/5/30 minute config values', () => {
-    expect(DEFAULT_CONFIG).toEqual({
+    expect(DEFAULT_CONFIG).toEqual(expect.objectContaining({
       workDuration: 25 * 60 * 1000,
       shortBreakDuration: 5 * 60 * 1000,
       longBreakDuration: 30 * 60 * 1000,
-    });
+    }));
   });
 
   it('identifies active phases correctly', () => {

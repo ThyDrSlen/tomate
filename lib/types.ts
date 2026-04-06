@@ -4,6 +4,9 @@ export type TimerConfig = {
   workDuration: number;
   shortBreakDuration: number;
   longBreakDuration: number;
+  autoStartBreak: boolean;
+  autoStartWork: boolean;
+  dailyGoal: number;
 };
 
 export type TimerState = {
@@ -31,6 +34,9 @@ export const DEFAULT_CONFIG: TimerConfig = {
   workDuration: 25 * 60 * 1000,
   shortBreakDuration: 5 * 60 * 1000,
   longBreakDuration: 30 * 60 * 1000,
+  autoStartBreak: false,
+  autoStartWork: false,
+  dailyGoal: 8,
 };
 
 export const INITIAL_STATE: TimerState = {

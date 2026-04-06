@@ -10,6 +10,9 @@ export default function App() {
   const [work, setWork] = createSignal(25);
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
+  const [autoStartBreak, setAutoStartBreak] = createSignal(false);
+  const [autoStartWork, setAutoStartWork] = createSignal(false);
+  const [dailyGoal, setDailyGoal] = createSignal(8);
   const [saved, setSaved] = createSignal(false);
 
   onMount(async () => {
@@ -17,6 +20,9 @@ export default function App() {
     setWork(Math.round(config.workDuration / MS_PER_MINUTE));
     setShortBreak(Math.round(config.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
+    setAutoStartBreak(config.autoStartBreak);
+    setAutoStartWork(config.autoStartWork);
+    setDailyGoal(config.dailyGoal);
   });
 
   const clamp = (value: number, min: number, max: number): number =>
@@ -31,10 +37,16 @@ export default function App() {
     setShortBreak(clampedShort);
     setLongBreak(clampedLong);
 
+    const clampedGoal = clamp(dailyGoal(), 1, 20);
+    setDailyGoal(clampedGoal);
+
     const config: TimerConfig = {
       workDuration: clampedWork * MS_PER_MINUTE,
       shortBreakDuration: clampedShort * MS_PER_MINUTE,
       longBreakDuration: clampedLong * MS_PER_MINUTE,
+      autoStartBreak: autoStartBreak(),
+      autoStartWork: autoStartWork(),
+      dailyGoal: clampedGoal,
     };
     await setConfig(config);
     await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
@@ -46,6 +58,9 @@ export default function App() {
     setWork(Math.round(DEFAULT_CONFIG.workDuration / MS_PER_MINUTE));
     setShortBreak(Math.round(DEFAULT_CONFIG.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
+    setAutoStartBreak(DEFAULT_CONFIG.autoStartBreak);
+    setAutoStartWork(DEFAULT_CONFIG.autoStartWork);
+    setDailyGoal(DEFAULT_CONFIG.dailyGoal);
   };
 
   return (
@@ -86,6 +101,44 @@ export default function App() {
               max={60}
               value={longBreak()}
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
+              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+          </label>
+        </div>
+
+        <div class="mt-6 space-y-3">
+          <h2 class="text-sm font-semibold text-gray-700">Automation</h2>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoStartBreak()}
+              onChange={(e) => setAutoStartBreak(e.currentTarget.checked)}
+              class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+            />
+            <span class="text-sm text-gray-700">Auto-start break after work</span>
+          </label>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoStartWork()}
+              onChange={(e) => setAutoStartWork(e.currentTarget.checked)}
+              class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+            />
+            <span class="text-sm text-gray-700">Auto-start work after break</span>
+          </label>
+        </div>
+
+        <div class="mt-6">
+          <label class="block">
+            <span class="text-sm font-medium text-gray-700">
+              Daily Goal <span class="font-normal text-gray-400">(1–20 tomates)</span>
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={dailyGoal()}
+              onInput={(e) => setDailyGoal(Number(e.currentTarget.value))}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </label>

@@ -5,6 +5,7 @@ import { isActivePhase } from '@/lib/timer';
 import {
   getCurrentLabel,
   setCurrentLabel,
+  getConfig,
   getTodayCount,
   getHeatmapData,
 } from '@/lib/storage';
@@ -22,6 +23,7 @@ export default function App() {
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [dailyGoal, setDailyGoal] = createSignal(8);
   const [ready, setReady] = createSignal(false);
 
   const sendAction = async (message: Record<string, unknown>): Promise<TimerState | null> => {
@@ -43,6 +45,8 @@ export default function App() {
     if (currentState) setState(currentState);
 
     setLabel(await getCurrentLabel());
+    const config = await getConfig();
+    setDailyGoal(config.dailyGoal);
     await refreshStats();
     setReady(true);
 
@@ -67,6 +71,21 @@ export default function App() {
       setRemaining(s.pausedRemaining);
     } else {
       setRemaining(0);
+    }
+  });
+
+  createEffect(() => {
+    const s = state();
+    if (s.phase === 'IDLE') {
+      document.title = 'Tomate';
+    } else if (s.phase === 'PAUSED') {
+      document.title = `⏸ ${formatTime()} — Tomate`;
+    } else if (s.phase === 'WORKING') {
+      document.title = `🍅 ${formatTime()} — Tomate`;
+    } else if (s.phase === 'SHORT_BREAK' || s.phase === 'LONG_BREAK') {
+      document.title = `☕ ${formatTime()} — Tomate`;
+    } else {
+      document.title = 'Tomate';
     }
   });
 
@@ -173,6 +192,19 @@ export default function App() {
         />
 
         <TodayCount count={todayCount()} />
+
+        <div class="mt-3 w-full px-1">
+          <div class="flex justify-between text-xs text-gray-500 mb-1">
+            <span>Daily goal</span>
+            <span>{todayCount()}/{dailyGoal()}</span>
+          </div>
+          <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              class="h-full bg-red-500 rounded-full transition-all duration-300"
+              style={{ width: `${Math.min(100, (todayCount() / dailyGoal()) * 100)}%` }}
+            />
+          </div>
+        </div>
 
         <div class="mt-2 w-full">
           <Heatmap days={120} data={heatmapData()} />

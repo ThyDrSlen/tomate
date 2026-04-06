@@ -262,6 +262,17 @@ export default defineBackground(() => {
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
 
+      if (config.autoStartBreak) {
+        const autoBreak = acceptBreak(completed, config);
+        await setTimerState(autoBreak);
+        if (autoBreak.endTime !== null) {
+          await scheduleTimerAlarm(autoBreak.endTime);
+          await startBadgeRefresh();
+        }
+        await refreshBadge();
+        return;
+      }
+
       const isLong = completed.cyclePosition === 3 ? '1' : '0';
       await browser.tabs.create({
         url: browser.runtime.getURL(
@@ -271,6 +282,17 @@ export default defineBackground(() => {
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
+      if (config.autoStartWork) {
+        const autoWork = startTimer({ ...completed, phase: 'IDLE' as const }, config);
+        await setTimerState(autoWork);
+        if (autoWork.endTime !== null) {
+          await scheduleTimerAlarm(autoWork.endTime);
+          await startBadgeRefresh();
+        }
+        await refreshBadge();
+        return;
+      }
+
       await browser.tabs.create({
         url: browser.runtime.getURL('/complete.html?type=break' as '/popup.html'),
       });
