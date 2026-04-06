@@ -23,8 +23,17 @@ export default function TimerRing(props: TimerRingProps) {
   const color = () => PHASE_COLORS[props.phase];
 
   return (
-    <svg width={SIZE} height={SIZE} class="timer-ring" viewBox={`0 0 ${SIZE} ${SIZE}`}>
-      <title>Timer progress</title>
+    <svg
+      width={SIZE}
+      height={SIZE}
+      class="timer-ring"
+      viewBox={`0 0 ${SIZE} ${SIZE}`}
+      role="progressbar"
+      aria-valuenow={Math.round(props.progress * 100)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label="Timer progress"
+    >
       <circle
         cx={SIZE / 2}
         cy={SIZE / 2}

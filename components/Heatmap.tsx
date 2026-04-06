@@ -13,7 +13,7 @@ type HeatmapCell = {
 };
 
 const INTENSITY_COLORS = [
-  '#F3F4F6',
+  '#E5E7EB',
   '#FCA5A5',
   '#EF4444',
   '#DC2626',
