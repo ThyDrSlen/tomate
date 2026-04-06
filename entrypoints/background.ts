@@ -226,6 +226,12 @@ export default defineBackground(() => {
     }
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    if (!isActivePhase(state.phase)) {
+      await clearActiveAlarms();
+      await refreshBadge();
+      return;
+    }
+
     const completed = completeTimer(state, config);
     await setTimerState(completed);
 
