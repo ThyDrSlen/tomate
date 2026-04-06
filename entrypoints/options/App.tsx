@@ -1,7 +1,8 @@
 import { createSignal, onMount, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
-import { getConfig, setConfig } from '@/lib/storage';
+import { getConfig, setConfig, getTheme, setTheme, type ThemeMode } from '@/lib/storage';
+import { initTheme } from '@/lib/theme';
 import { DEFAULT_CONFIG, type TimerConfig } from '@/lib/types';
 
 const MS_PER_MINUTE = 60_000;
@@ -10,6 +11,7 @@ export default function App() {
   const [work, setWork] = createSignal(25);
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
+  const [themeMode, setThemeMode] = createSignal<ThemeMode>('system');
   const [saved, setSaved] = createSignal(false);
 
   onMount(async () => {
@@ -17,6 +19,7 @@ export default function App() {
     setWork(Math.round(config.workDuration / MS_PER_MINUTE));
     setShortBreak(Math.round(config.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
+    setThemeMode(await getTheme());
   });
 
   const clamp = (value: number, min: number, max: number): number =>
@@ -49,9 +52,9 @@ export default function App() {
   };
 
   return (
-    <div class="min-h-screen bg-red-50 flex items-start justify-center pt-16">
-      <div class="w-full max-w-[400px] bg-white rounded-lg shadow-sm p-6">
-        <h1 class="text-xl font-bold text-red-600 mb-6">Tomate Settings</h1>
+    <div class="min-h-screen bg-red-50 dark:bg-gray-900 flex items-start justify-center pt-16">
+      <div class="w-full max-w-[400px] bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+        <h1 class="text-xl font-bold text-red-600 dark:text-red-400 mb-6">Tomate Settings</h1>
 
         <div class="space-y-4">
           <label class="block">
@@ -89,6 +92,29 @@ export default function App() {
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </label>
+        </div>
+
+        <div class="mt-6">
+          <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Appearance</h2>
+          <div class="flex gap-2 mt-2">
+            {(['light', 'dark', 'system'] as const).map((mode) => (
+              <button
+                type="button"
+                onClick={async () => {
+                  setThemeMode(mode);
+                  await setTheme(mode);
+                  initTheme();
+                }}
+                class={`px-3 py-1.5 text-xs rounded-md border ${
+                  themeMode() === mode
+                    ? 'bg-red-600 text-white border-red-600'
+                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                }`}
+              >
+                {mode === 'light' ? '☀️ Light' : mode === 'dark' ? '🌙 Dark' : '💻 System'}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div class="mt-6 flex items-center gap-4">

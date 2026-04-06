@@ -14,7 +14,21 @@ const KEYS = {
   SESSIONS: 'sessions',
   PENDING_CELEBRATION: 'pendingCelebration',
   CURRENT_LABEL: 'currentLabel',
+  THEME: 'theme',
 } as const;
+
+export type ThemeMode = 'light' | 'dark' | 'system';
+
+export const getTheme = async (): Promise<ThemeMode> => {
+  const result = await browser.storage.local.get(KEYS.THEME);
+  const val = result[KEYS.THEME];
+  if (val === 'light' || val === 'dark' || val === 'system') return val;
+  return 'system';
+};
+
+export const setTheme = async (theme: ThemeMode): Promise<void> => {
+  await browser.storage.local.set({ [KEYS.THEME]: theme });
+};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
