@@ -1,4 +1,4 @@
-import { createResource, For } from 'solid-js';
+import { createResource, For, Show } from 'solid-js';
 
 import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
@@ -43,6 +43,10 @@ export default function App() {
     <div class="min-h-screen bg-red-50 py-10 px-4">
       <div class="max-w-[800px] mx-auto">
         <h1 class="text-2xl font-bold text-red-600 mb-6">Tomate Stats</h1>
+
+        <Show when={sessions.error || yearData.error || todayCount.error}>
+          <div class="text-red-500 text-sm mb-4">Failed to load stats. Please try reopening this page.</div>
+        </Show>
 
         <div class="grid grid-cols-5 gap-3 mb-6">
           <StatCard label="Total tomates" value={total()} />

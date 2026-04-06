@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -25,6 +25,8 @@ export default function App() {
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [loading, setLoading] = createSignal(true);
+  let controlsRef: HTMLDivElement | undefined;
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
@@ -44,8 +46,13 @@ export default function App() {
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const handleStorageChange = (changes: Record<string, unknown>) => {
+      if ('sessions' in changes) refreshStats();
+    };
+
+    browser.storage.onChanged.addListener(handleStorageChange);
+    onCleanup(() => browser.storage.onChanged.removeListener(handleStorageChange));
+    setLoading(false);
   });
 
   createEffect(() => {
@@ -57,6 +64,13 @@ export default function App() {
       onCleanup(() => clearInterval(id));
     } else {
       setRemaining(0);
+    }
+  });
+
+  createEffect(() => {
+    if (state().phase === 'BREAK_SUGGESTION' && controlsRef) {
+      const firstBtn = controlsRef.querySelector('button');
+      firstBtn?.focus();
     }
   });
 
@@ -102,55 +116,63 @@ export default function App() {
   };
 
   return (
-    <div class="w-[360px] min-h-[400px] bg-red-50 p-4 flex flex-col items-center">
-      <div class="w-full flex justify-between items-center mb-4">
-        <h1 class="text-xl font-bold text-red-600">Tomate</h1>
+    <Show when={!loading()} fallback={
+      <div class="w-[360px] min-h-[400px] bg-red-50 p-4 flex items-center justify-center">
+        <span class="text-gray-400">Loading...</span>
+      </div>
+    }>
+      <div class="w-[360px] min-h-[400px] bg-red-50 p-4 flex flex-col items-center">
+        <div class="w-full flex justify-between items-center mb-4">
+          <h1 class="text-xl font-bold text-red-600">Tomate</h1>
+          <button
+            type="button"
+            onClick={() => browser.runtime.openOptionsPage()}
+            class="text-gray-400 hover:text-gray-600 text-lg"
+            aria-label="Settings"
+          >
+            ⚙️
+          </button>
+        </div>
+
+        <TimerRing progress={progress()} phase={state().phase} />
+        <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
+
+        <div class="text-sm text-gray-500 mt-1">
+          <Switch>
+            <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
+            <Match when={state().phase === 'WORKING'}>Working</Match>
+            <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
+            <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
+            <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
+          </Switch>
+        </div>
+
+        <TaskLabel value={label()} onChange={handleLabelChange} />
+
+        <div ref={controlsRef}>
+          <Controls
+            phase={state().phase}
+            onStart={startTimer}
+            onAbandon={abandonTimer}
+            onAcceptLongBreak={acceptLongBreak}
+            onSkipLongBreak={skipLongBreak}
+          />
+        </div>
+
+        <TodayCount count={todayCount()} />
+
+        <div class="mt-2 w-full">
+          <Heatmap days={120} data={heatmapData()} />
+        </div>
+
         <button
           type="button"
-          onClick={() => browser.runtime.openOptionsPage()}
-          class="text-gray-400 hover:text-gray-600 text-lg"
-          aria-label="Settings"
+          onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+          class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
         >
-          ⚙️
+          View all stats →
         </button>
       </div>
-
-      <TimerRing progress={progress()} phase={state().phase} />
-      <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
-
-      <div class="text-sm text-gray-500 mt-1">
-        <Switch>
-          <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
-          <Match when={state().phase === 'WORKING'}>Working</Match>
-          <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
-          <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
-          <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
-        </Switch>
-      </div>
-
-      <TaskLabel value={label()} onChange={handleLabelChange} />
-
-      <Controls
-        phase={state().phase}
-        onStart={startTimer}
-        onAbandon={abandonTimer}
-        onAcceptLongBreak={acceptLongBreak}
-        onSkipLongBreak={skipLongBreak}
-      />
-
-      <TodayCount count={todayCount()} />
-
-      <div class="mt-2 w-full">
-        <Heatmap days={120} data={heatmapData()} />
-      </div>
-
-      <button
-        type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
-        class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
-      >
-        View all stats →
-      </button>
-    </div>
+    </Show>
   );
 }
