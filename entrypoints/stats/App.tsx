@@ -1,6 +1,6 @@
-import { createResource, For } from 'solid-js';
+import { createResource, For, Show } from 'solid-js';
 
-import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
+import { getSessionHistory, getHeatmapData, getTodayCount, getConfig } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
 
 import Heatmap from '@/components/Heatmap';
@@ -33,11 +33,18 @@ export default function App() {
   const [yearData] = createResource(() => getHeatmapData(365));
   const [sessions] = createResource(() => getSessionHistory());
   const [todayCount] = createResource(() => getTodayCount());
+  const [config] = createResource(() => getConfig());
 
   const total = () => computeTotalCount(sessions() ?? []);
   const week = () => computeWeekCount(sessions() ?? []);
   const bestDay = () => computeBestDay(sessions() ?? []);
   const streak = () => computeStreak(sessions() ?? []);
+
+  const goalReached = () => {
+    const count = todayCount();
+    const goal = config()?.dailyGoal ?? 8;
+    return count !== undefined && count >= goal;
+  };
 
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
@@ -58,6 +65,16 @@ export default function App() {
             value={`${streak()}d`}
           />
         </div>
+
+        <Show when={goalReached()}>
+          <div class="mb-6 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-5 py-4 shadow-sm dark:border-green-800 dark:bg-green-950">
+            <span class="text-2xl" aria-hidden="true">🎯</span>
+            <div>
+              <p class="font-semibold text-green-800 dark:text-green-200">Goal reached! Great work today!</p>
+              <p class="text-sm text-green-600 dark:text-green-400">You've hit your daily goal of {config()?.dailyGoal ?? 8} tomates.</p>
+            </div>
+          </div>
+        </Show>
 
         <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">
           <h2 class="text-sm font-semibold text-gray-700 mb-3">365-day activity</h2>
