@@ -209,74 +209,47 @@ describe('timer state machine', () => {
     });
   });
 
-  it('endTime invariant: equals now when new duration matches elapsed exactly', () => {
-    // elapsed = 5_000ms, newDuration = 5_000ms → startTime + newDuration === now
-    const now = 10_000;
+  it('adjusts a long break to finish immediately when new duration is shorter than elapsed', () => {
+    const now = 50_000;
     const state = createState({
-      phase: 'WORKING',
-      startTime: 5_000,
-      endTime: 15_000,
+      phase: 'LONG_BREAK',
+      startTime: 30_000,
+      endTime: 60_000,
+      duration: 30_000,
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+    // 20 000 ms have elapsed (now - startTime); new duration is only 10 000 ms
+    // so recalculatedEndTime = 30 000 + 10 000 = 40 000, which is in the past → clamp to now
+    const config = createConfig({ longBreakDuration: 10_000 });
+
+    expect(adjustDuration(state, config, now)).toEqual({
+      ...state,
       duration: 10_000,
+      endTime: now,
     });
-    const config = createConfig({ workDuration: 5_000 });
-    const result = adjustDuration(state, config, now);
-
-    expect(result.endTime).toBe(now);
-    expect(result.endTime).toBeGreaterThanOrEqual(now);
   });
 
-  it('endTime invariant: clamped to now when new duration is shorter than elapsed', () => {
-    // elapsed = 5_000ms, newDuration = 1ms → endTime must not go into the past
-    const now = 10_000;
+  it('adjusts a long break with a longer duration into the future', () => {
+    const now = 50_000;
     const state = createState({
-      phase: 'WORKING',
-      startTime: 5_000,
-      endTime: 15_000,
-      duration: 10_000,
+      phase: 'LONG_BREAK',
+      startTime: 30_000,
+      endTime: 60_000,
+      duration: 30_000,
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
     });
-    const config = createConfig({ workDuration: 1 });
-    const result = adjustDuration(state, config, now);
+    // new duration 45 000 ms → recalculatedEndTime = 30 000 + 45 000 = 75 000, still in the future
+    const config = createConfig({ longBreakDuration: 45_000 });
 
-    expect(result.endTime).toBe(now);
-    expect(result.endTime).toBeGreaterThanOrEqual(now);
-  });
-
-  it('endTime invariant: never in the past regardless of new duration', () => {
-    // Covers any new duration ≤ elapsed: endTime >= now must always hold
-    const now = 20_000;
-    const state = createState({
-      phase: 'WORKING',
-      startTime: 1_000,
-      endTime: 21_000,
-      duration: 20_000,
+    expect(adjustDuration(state, config, now)).toEqual({
+      ...state,
+      duration: 45_000,
+      endTime: 75_000,
     });
-
-    for (const workDuration of [1, 500, 18_999, 19_000]) {
-      const config = createConfig({ workDuration });
-      const result = adjustDuration(state, config, now);
-      expect(result.endTime).toBeGreaterThanOrEqual(now);
-    }
-  });
-
-  it('adjusts SHORT_BREAK using shortBreakDuration and never sets endTime in the past', () => {
-    // 3_000ms elapsed on a break whose new shortBreakDuration is 2_000ms
-    // → startTime(1_000) + 2_000 = 3_000 === now, so endTime must clamp to now
-    const now = 4_000;
-    const state = createState({
-      phase: 'SHORT_BREAK',
-      startTime: 1_000,
-      endTime: 6_000,
-      duration: 5_000,
-      sessionCount: 1,
-      completedToday: 1,
-    });
-    const config = createConfig({ shortBreakDuration: 2_000 });
-    const result = adjustDuration(state, config, now);
-
-    expect(result.duration).toBe(2_000);
-    expect(result.endTime).toBeGreaterThanOrEqual(now);
-    // startTime(1_000) + 2_000 = 3_000 < now(4_000), so it must clamp to now
-    expect(result.endTime).toBe(now);
   });
 
   it('recovers a missed alarm for a completed work session', () => {
