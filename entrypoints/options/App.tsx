@@ -20,6 +20,10 @@ export default function App() {
   });
 
   const handleSave = async () => {
+    if (!Number.isFinite(work()) || work() < 1) return;
+    if (!Number.isFinite(shortBreak()) || shortBreak() < 1) return;
+    if (!Number.isFinite(longBreak()) || longBreak() < 1) return;
+
     const config: TimerConfig = {
       workDuration: work() * MS_PER_MINUTE,
       shortBreakDuration: shortBreak() * MS_PER_MINUTE,
