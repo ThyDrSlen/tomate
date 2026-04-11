@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
+import { ambientClose } from '@/lib/ambient';
 import {
   getPendingCelebration,
   setPendingCelebration,
@@ -47,6 +48,10 @@ export default function App() {
     browser.storage.onChanged.addListener(refreshStats);
     onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
   });
+
+  // Close the ambient AudioContext when the popup is torn down so no context
+  // leaks across open/close cycles (fixes #98).
+  onCleanup(() => { ambientClose(); });
 
   createEffect(() => {
     const s = state();
