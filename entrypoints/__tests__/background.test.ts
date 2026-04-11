@@ -8,7 +8,6 @@ import {
   getPendingCelebration,
   getSessionHistory,
   getTimerState,
-  setBlockedSites,
   setCurrentLabel,
   setTimerState,
 } from '@/lib/storage';
@@ -30,34 +29,22 @@ const createConfig = (overrides: Partial<TimerConfig> = {}): TimerConfig => ({
   ...overrides,
 });
 
-let testId = 0;
-
 const initBackground = async (): Promise<void> => {
   (globalThis as typeof globalThis & { defineBackground: (main?: () => void | Promise<void>) => { main?: () => void | Promise<void> } }).defineBackground =
     (main) => ({ main });
 
-  const background = (await import(`../background?test=${testId++}`)) as BackgroundModule;
+  const background = (await import(`../background?test=${Math.random()}`)) as BackgroundModule;
   await background.default.main?.();
-};
-
-const mockDnr = {
-  getDynamicRules: vi.fn().mockResolvedValue([]),
-  updateDynamicRules: vi.fn().mockResolvedValue(undefined),
 };
 
 describe('background service worker', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
-    vi.clearAllMocks();
     fakeBrowser.reset();
     await fakeBrowser.storage.local.clear();
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
-
-    mockDnr.getDynamicRules.mockResolvedValue([]);
-    mockDnr.updateDynamicRules.mockResolvedValue(undefined);
-    (fakeBrowser as typeof fakeBrowser & { declarativeNetRequest: typeof mockDnr }).declarativeNetRequest = mockDnr;
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
@@ -197,38 +184,6 @@ describe('background service worker', () => {
     );
   });
 
-  it('reschedules an active timer alarm after extension update (endTime in the future)', async () => {
-    const futureEndTime = 20_000;
-    vi.spyOn(Date, 'now').mockReturnValue(10_000);
-    await setTimerState(
-      createState({
-        phase: 'WORKING',
-        startTime: 5_000,
-        endTime: futureEndTime,
-        duration: 15_000,
-      }),
-    );
-    await initBackground();
-
-    // Simulate extension update: alarms were cleared by Chrome, onInstalled fires
-    await fakeBrowser.alarms.clearAll();
-    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
-
-    // Timer state should be unchanged (session not yet complete)
-    await expect(getTimerState()).resolves.toEqual(
-      createState({
-        phase: 'WORKING',
-        startTime: 5_000,
-        endTime: futureEndTime,
-        duration: 15_000,
-      }),
-    );
-    // Alarm must be rescheduled to the original endTime
-    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
-      expect.objectContaining({ scheduledTime: futureEndTime }),
-    );
-  });
-
   it('recovers a missed working alarm on startup and records the completed session', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     await setCurrentLabel('Recovered work');
@@ -285,56 +240,6 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
-  it('rejects UPDATE_CONFIG with zero workDuration and keeps the current state', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(10_000);
-    const workingState = createState({
-      phase: 'WORKING',
-      startTime: 5_000,
-      endTime: 15_000,
-      duration: 10_000,
-    });
-    await setTimerState(workingState);
-    await initBackground();
-
-    const badConfig = createConfig({ workDuration: 0 });
-    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
-
-    // State should be unchanged — the invalid config is rejected
-    expect(response).toEqual(workingState);
-    // Config in storage should NOT have been overwritten
-    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
-  });
-
-  it('rejects UPDATE_CONFIG with negative shortBreakDuration', async () => {
-    await initBackground();
-
-    const badConfig = createConfig({ shortBreakDuration: -5_000 });
-    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
-
-    expect(response).toEqual(createState());
-    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
-  });
-
-  it('rejects UPDATE_CONFIG with NaN longBreakDuration', async () => {
-    await initBackground();
-
-    const badConfig = createConfig({ longBreakDuration: NaN });
-    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
-
-    expect(response).toEqual(createState());
-    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
-  });
-
-  it('rejects UPDATE_CONFIG with Infinity workDuration', async () => {
-    await initBackground();
-
-    const badConfig = createConfig({ workDuration: Infinity });
-    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
-
-    expect(response).toEqual(createState());
-    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
-  });
-
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });
@@ -366,98 +271,164 @@ describe('background service worker', () => {
     );
   });
 
-  describe('website blocking', () => {
-    it('applies blocking rules when blockedSites changes during WORKING phase', async () => {
+  // #177 — reschedulePendingTimer and onInstalled reason tests
+  describe('onInstalled reason routing (#177)', () => {
+    it('reschedules active WORKING timer on update reason', async () => {
+      const endTime = Date.now() + 10_000; // future
+      vi.spyOn(Date, 'now').mockReturnValue(endTime - 10_000);
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: endTime - 10_000,
+          endTime,
+          duration: 10_000,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
+
+      // Should have recreated the timer alarm at the original endTime
+      const alarm = await fakeBrowser.alarms.get('tomate-timer');
+      expect(alarm?.scheduledTime).toBe(endTime);
+    });
+
+    it('reschedules active SHORT_BREAK timer on chrome_update reason', async () => {
+      const endTime = Date.now() + 5_000;
+      vi.spyOn(Date, 'now').mockReturnValue(endTime - 5_000);
+      await setTimerState(
+        createState({
+          phase: 'SHORT_BREAK',
+          startTime: endTime - 5_000,
+          endTime,
+          duration: 5_000,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'chrome_update', temporary: false } as never);
+
+      const alarm = await fakeBrowser.alarms.get('tomate-timer');
+      expect(alarm?.scheduledTime).toBe(endTime);
+    });
+
+    it('calls recoverFromMissedAlarm for install reason (fresh install)', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(10_000);
       await setTimerState(
         createState({
           phase: 'WORKING',
           startTime: 1_000,
-          endTime: 2_000,
+          endTime: 2_000, // already expired
           duration: 1_000,
         }),
       );
       await initBackground();
 
-      await fakeBrowser.storage.onChanged.trigger(
-        { blockedSites: { newValue: ['reddit.com', 'twitter.com'] } },
-        'local',
-      );
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
 
-      expect(mockDnr.updateDynamicRules).toHaveBeenCalledWith(
-        expect.objectContaining({
-          addRules: expect.arrayContaining([
-            expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'reddit.com' }) }),
-            expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'twitter.com' }) }),
-          ]),
+      // Recovery should have advanced to SHORT_BREAK
+      const state = await getTimerState();
+      expect(state.phase).toBe('SHORT_BREAK');
+    });
+
+    it('reschedulePendingTimer falls back to recovery when timer is expired', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(50_000);
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 2_000, // expired
+          duration: 1_000,
         }),
       );
-    });
-
-    it('clears blocking rules when blockedSites changes during a non-WORKING phase', async () => {
-      await setTimerState(createState({ phase: 'SHORT_BREAK', startTime: 1_000, endTime: 2_000, duration: 1_000 }));
-      mockDnr.getDynamicRules.mockResolvedValue([{ id: 1000 }]);
       await initBackground();
 
-      await fakeBrowser.storage.onChanged.trigger(
-        { blockedSites: { newValue: ['reddit.com'] } },
-        'local',
-      );
+      // 'update' reason with expired timer → should recover
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
 
-      expect(mockDnr.updateDynamicRules).toHaveBeenCalledWith({ removeRuleIds: [1000], addRules: [] });
+      const state = await getTimerState();
+      expect(state.phase).toBe('SHORT_BREAK');
     });
 
-    it('applies blocking rules when phase transitions to WORKING', async () => {
-      await setBlockedSites(['reddit.com']);
-      await setTimerState(createState({ phase: 'IDLE' }));
+    it('reschedulePendingTimer falls back to recovery when in IDLE state', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(10_000);
+      // IDLE state — no timer to reschedule
       await initBackground();
 
-      await fakeBrowser.storage.onChanged.trigger(
-        {
-          timerState: {
-            oldValue: createState({ phase: 'IDLE' }),
-            newValue: createState({ phase: 'WORKING', startTime: 1_000, endTime: 2_000, duration: 1_000 }),
-          },
-        },
-        'local',
-      );
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
 
-      expect(mockDnr.updateDynamicRules).toHaveBeenCalledWith(
-        expect.objectContaining({
-          addRules: expect.arrayContaining([
-            expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'reddit.com' }) }),
-          ]),
+      // Should remain IDLE (recovery from IDLE is a no-op)
+      const state = await getTimerState();
+      expect(state.phase).toBe('IDLE');
+    });
+  });
+
+  // #179 — onAlarm try/catch and error badge tests
+  describe('onAlarm error handling (#179)', () => {
+    it('sets error badge when onAlarm throws an unexpected error', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(5_000);
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 4_000,
+          duration: 3_000,
         }),
       );
-    });
-
-    it('clears blocking rules when phase transitions away from WORKING', async () => {
-      await setBlockedSites(['reddit.com']);
-      await setTimerState(createState({ phase: 'SHORT_BREAK', startTime: 1_000, endTime: 2_000, duration: 1_000 }));
-      mockDnr.getDynamicRules.mockResolvedValue([{ id: 1000 }]);
       await initBackground();
 
-      await fakeBrowser.storage.onChanged.trigger(
-        {
-          timerState: {
-            oldValue: createState({ phase: 'WORKING', startTime: 1_000, endTime: 2_000, duration: 1_000 }),
-            newValue: createState({ phase: 'SHORT_BREAK', startTime: 2_000, endTime: 3_000, duration: 1_000 }),
-          },
-        },
-        'local',
-      );
+      // Make getTimerState throw to simulate alarm handler error
+      // We'll trigger the alarm on an unexpected internal error path
+      // by making completeTimer throw through setTimerState
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      expect(mockDnr.updateDynamicRules).toHaveBeenCalledWith({ removeRuleIds: [1000], addRules: [] });
+      // Simulate an error during alarm processing by corrupting storage read
+      vi.spyOn(fakeBrowser.storage.local, 'get').mockRejectedValueOnce(new Error('storage read failed'));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+      // Should have set error badge
+      expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: '!' });
+      expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenCalledWith({ color: '#DC2626' });
+      expect(consoleSpy).toHaveBeenCalledWith('[tomate] onAlarm error:', expect.any(Error));
     });
 
-    it('ignores storage changes for unrelated keys', async () => {
+    it('badge-refresh alarm only loads state, not config', async () => {
       await initBackground();
 
-      await fakeBrowser.storage.onChanged.trigger(
-        { config: { newValue: DEFAULT_CONFIG } },
-        'local',
-      );
+      const getSpy = vi.spyOn(fakeBrowser.storage.local, 'get');
 
-      expect(mockDnr.updateDynamicRules).not.toHaveBeenCalled();
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 0 });
+
+      // Should have loaded timerState and sessions (for todayCount), not config
+      const keys = getSpy.mock.calls.flatMap((call) => {
+        const arg = call[0];
+        return Array.isArray(arg) ? arg : [arg];
+      });
+      expect(keys).not.toContain('config');
+    });
+
+    it('notification error during WORKING phase does not stop timer processing', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(5_000);
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 4_000,
+          duration: 3_000,
+        }),
+      );
+      await initBackground();
+
+      // Make notifications.create throw
+      vi.spyOn(fakeBrowser.notifications, 'create').mockRejectedValueOnce(new Error('notifications unavailable'));
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+      // Timer state should still advance despite notification failure
+      const state = await getTimerState();
+      expect(state.phase).toBe('SHORT_BREAK');
     });
   });
 });

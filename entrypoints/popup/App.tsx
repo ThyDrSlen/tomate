@@ -153,7 +153,7 @@ export default function App() {
 
       <button
         type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html') })}
         class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
       >
         View all stats →

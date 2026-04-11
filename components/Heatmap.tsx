@@ -12,12 +12,13 @@ type HeatmapCell = {
   dayOfWeek: number;
 };
 
-const INTENSITY_COLORS = [
-  '#F3F4F6',
-  '#FCA5A5',
-  '#EF4444',
-  '#DC2626',
-  '#991B1B',
+/** Tailwind classes for each intensity level — supports dark: variants */
+const INTENSITY_CLASSES = [
+  'bg-gray-100 dark:bg-gray-700',
+  'bg-red-300 dark:bg-red-900',
+  'bg-red-400 dark:bg-red-700',
+  'bg-red-600 dark:bg-red-500',
+  'bg-red-800 dark:bg-red-400',
 ] as const;
 
 const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''] as const;
@@ -27,12 +28,12 @@ const MONTH_NAMES = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ] as const;
 
-const getIntensityColor = (count: number): string => {
-  if (count === 0) return INTENSITY_COLORS[0];
-  if (count === 1) return INTENSITY_COLORS[1];
-  if (count <= 3) return INTENSITY_COLORS[2];
-  if (count <= 5) return INTENSITY_COLORS[3];
-  return INTENSITY_COLORS[4];
+const getIntensityClass = (count: number): string => {
+  if (count === 0) return INTENSITY_CLASSES[0];
+  if (count === 1) return INTENSITY_CLASSES[1];
+  if (count <= 3) return INTENSITY_CLASSES[2];
+  if (count <= 5) return INTENSITY_CLASSES[3];
+  return INTENSITY_CLASSES[4];
 };
 
 const toDateKey = (date: Date): string => {
@@ -236,11 +237,10 @@ export default function Heatmap(props: HeatmapProps) {
                 {(cell) =>
                   cell ? (
                     <div
-                      class="rounded-sm"
+                      class={`rounded-sm ${getIntensityClass(cell.count)}`}
                       style={{
                         width: `${cellSize()}px`,
                         height: `${cellSize()}px`,
-                        "background-color": getIntensityColor(cell.count),
                       }}
                       title={tooltipText(cell)}
                     />
