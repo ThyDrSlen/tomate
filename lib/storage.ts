@@ -45,8 +45,24 @@ export const setTimerState = async (state: TimerState): Promise<void> => {
   await browser.storage.local.set({ [KEYS.TIMER_STATE]: state });
 };
 
+const toPositiveNumber = (value: unknown, fallback: number): number => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
+const validateConfig = (raw: unknown): TimerConfig => {
+  if (raw === null || typeof raw !== 'object') return DEFAULT_CONFIG;
+  const r = raw as Record<string, unknown>;
+  return {
+    workDuration: toPositiveNumber(r.workDuration, DEFAULT_CONFIG.workDuration),
+    shortBreakDuration: toPositiveNumber(r.shortBreakDuration, DEFAULT_CONFIG.shortBreakDuration),
+    longBreakDuration: toPositiveNumber(r.longBreakDuration, DEFAULT_CONFIG.longBreakDuration),
+    openBreakTab: typeof r.openBreakTab === 'boolean' ? r.openBreakTab : DEFAULT_CONFIG.openBreakTab,
+  };
+};
+
 export const getConfig = async (): Promise<TimerConfig> =>
-  (await getStoredValue<TimerConfig>(KEYS.CONFIG)) ?? DEFAULT_CONFIG;
+  validateConfig(await getStoredValue<unknown>(KEYS.CONFIG));
 
 export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
