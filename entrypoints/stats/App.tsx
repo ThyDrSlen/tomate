@@ -1,4 +1,4 @@
-import { createResource, For } from 'solid-js';
+import { createResource, For, Show } from 'solid-js';
 
 import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
@@ -45,23 +45,53 @@ export default function App() {
         <h1 class="text-2xl font-bold text-red-600 mb-6">Tomate Stats</h1>
 
         <div class="grid grid-cols-5 gap-3 mb-6">
-          <StatCard label="Total tomates" value={total()} />
-          <StatCard label="Today" value={todayCount() ?? 0} />
-          <StatCard label="This week" value={week()} />
-          <StatCard
-            label="Best day"
-            value={bestDay()?.count ?? '—'}
-            sublabel={bestDay()?.date}
-          />
-          <StatCard
-            label="Current streak"
-            value={`${streak()}d`}
-          />
+          <Show
+            when={!sessions.loading}
+            fallback={<div class="h-24 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />}
+          >
+            <StatCard label="Total tomates" value={total()} />
+          </Show>
+          <Show
+            when={!todayCount.loading}
+            fallback={<div class="h-24 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />}
+          >
+            <StatCard label="Today" value={todayCount() ?? 0} />
+          </Show>
+          <Show
+            when={!sessions.loading}
+            fallback={<div class="h-24 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />}
+          >
+            <StatCard label="This week" value={week()} />
+          </Show>
+          <Show
+            when={!sessions.loading}
+            fallback={<div class="h-24 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />}
+          >
+            <StatCard
+              label="Best day"
+              value={bestDay()?.count ?? '—'}
+              sublabel={bestDay()?.date}
+            />
+          </Show>
+          <Show
+            when={!sessions.loading}
+            fallback={<div class="h-24 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />}
+          >
+            <StatCard
+              label="Current streak"
+              value={`${streak()}d`}
+            />
+          </Show>
         </div>
 
         <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">
           <h2 class="text-sm font-semibold text-gray-700 mb-3">365-day activity</h2>
-          <Heatmap days={365} cellSize={14} data={yearData() ?? {}} />
+          <Show
+            when={!yearData.loading}
+            fallback={<div class="h-32 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />}
+          >
+            <Heatmap days={365} cellSize={14} data={yearData() ?? {}} />
+          </Show>
 
           <div class="flex items-center gap-1 mt-3 text-[10px] text-gray-400">
             <span>Less</span>

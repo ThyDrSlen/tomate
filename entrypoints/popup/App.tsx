@@ -60,6 +60,17 @@ export default function App() {
     }
   });
 
+  // Focus the primary action button whenever the phase changes (issue #49)
+  createEffect(() => {
+    // Track the phase so this effect re-runs on every phase change
+    state().phase;
+    // Use a microtask to allow SolidJS to finish rendering the new Controls branch
+    queueMicrotask(() => {
+      const btn = document.querySelector<HTMLElement>('[data-focus-target]');
+      btn?.focus();
+    });
+  });
+
   const formatTime = () => {
     const ms = remaining();
     const totalSeconds = Math.ceil(ms / 1000);
