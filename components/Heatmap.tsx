@@ -65,6 +65,7 @@ const generateHeatmapGrid = (
 };
 
 type MonthLabel = { label: string; column: number };
+type YearLabel = { year: number; column: number };
 
 export default function Heatmap(props: HeatmapProps) {
   const cellSize = () => props.cellSize ?? 12;
@@ -119,6 +120,32 @@ export default function Heatmap(props: HeatmapProps) {
     return labels;
   });
 
+  const yearLabels = createMemo(() => {
+    const cols = columns();
+    const labels: YearLabel[] = [];
+    let lastYear = -1;
+    let yearsFound = 0;
+
+    for (let c = 0; c < cols.length; c++) {
+      const firstCell = cols[c].find((cell) => cell !== null);
+      if (firstCell) {
+        const year = Number.parseInt(firstCell.date.split('-')[0], 10);
+        if (year !== lastYear) {
+          yearsFound++;
+          // Only emit the label if there is a genuine year boundary mid-grid
+          // (i.e. this is not the very first column of the grid)
+          if (c > 0) {
+            labels.push({ year, column: c });
+          }
+          lastYear = year;
+        }
+      }
+    }
+
+    // Only return labels when the grid actually spans two different years
+    return yearsFound > 1 ? labels : [];
+  });
+
   const tooltipText = (cell: HeatmapCell) => {
     const count = cell.count;
     const label = count === 0 ? 'No tomates' : `${count} tomate${count !== 1 ? 's' : ''}`;
@@ -150,6 +177,25 @@ export default function Heatmap(props: HeatmapProps) {
           }}
         </For>
       </div>
+
+      {/* Year boundary labels (only rendered when grid spans two calendar years) */}
+      {yearLabels().length > 0 && (
+        <div class="relative" style={{ "padding-left": `${labelWidth}px`, height: "14px" }}>
+          <For each={yearLabels()}>
+            {(yl) => {
+              const left = () => yl.column * (cellSize() + gap);
+              return (
+                <span
+                  class="absolute text-[9px] font-semibold text-gray-500 leading-none"
+                  style={{ left: `${left()}px` }}
+                >
+                  {yl.year}
+                </span>
+              );
+            }}
+          </For>
+        </div>
+      )}
 
       {/* Grid with day labels */}
       <div class="flex">

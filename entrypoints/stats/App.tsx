@@ -1,4 +1,4 @@
-import { createResource, For } from 'solid-js';
+import { createResource, For, createMemo } from 'solid-js';
 
 import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
@@ -77,6 +77,64 @@ export default function App() {
             <span>More</span>
           </div>
         </div>
+
+        <RecentSessions sessions={sessions() ?? []} />
+      </div>
+    </div>
+  );
+}
+
+const MONTH_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+] as const;
+
+function formatSessionDate(ts: number): string {
+  const d = new Date(ts);
+  return `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`;
+}
+
+function formatDuration(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  return `${minutes} min`;
+}
+
+type RecentSessionsProps = {
+  sessions: import('@/lib/types').CompletedSession[];
+};
+
+function RecentSessions(props: RecentSessionsProps) {
+  const recent = createMemo(() =>
+    [...props.sessions]
+      .sort((a, b) => b.startTime - a.startTime)
+      .slice(0, 20),
+  );
+
+  return (
+    <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100 mt-4">
+      <h2 class="text-sm font-semibold text-gray-700 mb-3">Recent sessions</h2>
+      <div class="flex flex-col gap-1 max-h-80 overflow-y-auto">
+        <For
+          each={recent()}
+          fallback={
+            <p class="text-xs text-gray-400 py-2">No sessions yet.</p>
+          }
+        >
+          {(session) => {
+            const durationMs = session.endTime - session.startTime;
+            const dateStr = formatSessionDate(session.startTime);
+            const durStr = formatDuration(durationMs);
+            return (
+              <div class="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+                <span class="text-xs text-gray-500 w-16 shrink-0">{dateStr}</span>
+                <span class="text-xs text-red-500 font-medium w-14 shrink-0">{durStr}</span>
+                {session.label && (
+                  <span class="text-xs text-gray-400 truncate">"{session.label}"</span>
+                )}
+              </div>
+            );
+          }}
+        </For>
       </div>
     </div>
   );
