@@ -44,8 +44,13 @@ export default function App() {
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const onSessionsChanged = (changes: Record<string, unknown>) => {
+      if ('sessions' in changes) {
+        void refreshStats();
+      }
+    };
+    browser.storage.onChanged.addListener(onSessionsChanged);
+    onCleanup(() => browser.storage.onChanged.removeListener(onSessionsChanged));
   });
 
   createEffect(() => {

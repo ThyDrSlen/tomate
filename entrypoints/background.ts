@@ -213,7 +213,19 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+  browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    const promise = handleMessage(message as MessageAction).catch((err: unknown) => {
+      console.error('[tomate] onMessage handler error:', err);
+      return null;
+    });
+
+    // Pipe the resolved value into sendResponse for hosts that require
+    // the return-true + sendResponse protocol (MV2-style runtimes).
+    // Returning the Promise itself supports Chrome MV3 and test fakes that
+    // await the listener's return value directly.
+    promise.then(sendResponse);
+    return promise as unknown as true;
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
