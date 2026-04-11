@@ -115,24 +115,35 @@ export default defineBackground(() => {
   };
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const recovered = recoverMissedAlarm(state, config);
+    const [initialState, config] = await Promise.all([getTimerState(), getConfig()]);
 
-    if (!recovered) {
+    const MAX_HOPS = 10;
+    let current = initialState;
+    let hops = 0;
+
+    while (hops < MAX_HOPS) {
+      const recovered = recoverMissedAlarm(current, config);
+      if (!recovered) break;
+
+      if (current.phase === 'WORKING') {
+        await persistCompletedSession(current, Date.now());
+      }
+
+      current = recovered;
+      hops++;
+    }
+
+    if (hops === 0) {
       await refreshBadge();
       return;
     }
 
-    await setTimerState(recovered);
+    await setTimerState(current);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
-    }
-
-    if (recovered.phase === 'SHORT_BREAK' && recovered.endTime !== null) {
-      await scheduleTimerAlarm(recovered.endTime);
+    if (isActivePhase(current.phase) && current.endTime !== null) {
+      await scheduleTimerAlarm(current.endTime);
       await startBadgeRefresh();
-    } else if (!isActivePhase(recovered.phase)) {
+    } else {
       await clearActiveAlarms();
     }
 

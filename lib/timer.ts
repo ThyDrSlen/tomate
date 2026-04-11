@@ -152,7 +152,9 @@ export const recoverMissedAlarm = (
     return null;
   }
 
-  return completeTimer(state, config, currentTime);
+  // Complete using the scheduled end time so that cascading phases
+  // also reflect the original alarm schedule, enabling multi-hop detection.
+  return completeTimer(state, config, state.endTime);
 };
 
 export const getRemainingMs = (state: TimerState, now?: number): number =>
