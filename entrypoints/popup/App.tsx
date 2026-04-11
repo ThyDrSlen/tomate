@@ -94,6 +94,41 @@ export default function App() {
     setState(newState as TimerState);
   };
 
+  createEffect(() => {
+    const phase = state().phase;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Don't fire shortcuts when an input/textarea is focused
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+
+      switch (event.key) {
+        case ' ':
+          event.preventDefault();
+          if (phase === 'IDLE') startTimer();
+          else if (phase === 'WORKING' || phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') abandonTimer();
+          break;
+        case 'Escape':
+          event.preventDefault();
+          if (phase === 'WORKING' || phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') abandonTimer();
+          break;
+        case 'Enter':
+          event.preventDefault();
+          if (phase === 'BREAK_SUGGESTION') acceptLongBreak();
+          break;
+        case 's':
+        case 'S':
+          event.preventDefault();
+          if (phase === 'BREAK_SUGGESTION') skipLongBreak();
+          else if (phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') abandonTimer();
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    onCleanup(() => document.removeEventListener('keydown', handleKeyDown));
+  });
+
   let labelTimeout: ReturnType<typeof setTimeout>;
   const handleLabelChange = (value: string) => {
     setLabel(value);
