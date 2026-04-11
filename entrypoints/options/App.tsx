@@ -20,7 +20,9 @@ export default function App() {
   });
 
   const handleSave = async () => {
+    const currentConfig = await getConfig();
     const config: TimerConfig = {
+      ...currentConfig,
       workDuration: work() * MS_PER_MINUTE,
       shortBreakDuration: shortBreak() * MS_PER_MINUTE,
       longBreakDuration: longBreak() * MS_PER_MINUTE,
