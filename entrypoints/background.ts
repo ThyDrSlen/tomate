@@ -40,8 +40,11 @@ export default defineBackground(() => {
   const BADGE_GOLD = '#CA8A04';
   const badgeApi = browser.action;
 
-  const refreshBadge = async (): Promise<void> => {
-    const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
+  const refreshBadge = async (
+    preloadedState?: Awaited<ReturnType<typeof getTimerState>>,
+    preloadedTodayCount?: number,
+  ): Promise<void> => {
+    const state = preloadedState ?? (await getTimerState());
 
     let text = '';
     let color = BADGE_RED;
@@ -65,6 +68,7 @@ export default defineBackground(() => {
       }
       case 'IDLE':
       default: {
+        const todayCount = preloadedTodayCount ?? (await getTodayCount());
         text = todayCount > 0 ? String(todayCount) : '';
         color = BADGE_RED;
         break;
@@ -255,6 +259,6 @@ export default defineBackground(() => {
       await clearActiveAlarms();
     }
 
-    await refreshBadge();
+    await refreshBadge(completed);
   });
 });
