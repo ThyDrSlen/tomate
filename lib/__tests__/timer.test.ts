@@ -209,7 +209,7 @@ describe('timer state machine', () => {
     });
   });
 
-  it('recovers a missed alarm for a completed work session', () => {
+  it('recovers a missed alarm for a completed work session (break still in future)', () => {
     const config = createConfig({ shortBreakDuration: 500 });
     const state = createState({
       phase: 'WORKING',
@@ -221,19 +221,89 @@ describe('timer state machine', () => {
       completedToday: 0,
     });
 
-    expect(recoverMissedAlarm(state, config, 3_000)).toEqual({
+    // now = 2_100 means work ended, break starts at work endTime (2_000)
+    // break endTime = 2_000 + 500 = 2_500 which is > 2_100, so break is still active
+    const steps = recoverMissedAlarm(state, config, 2_100);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].before.phase).toBe('WORKING');
+    expect(steps[0].after).toEqual({
       ...state,
       phase: 'SHORT_BREAK',
-      startTime: 3_000,
-      endTime: 3_500,
+      startTime: 2_000,
+      endTime: 2_500,
       duration: 500,
       sessionCount: 1,
       completedToday: 1,
     });
   });
 
-  it('returns null when recovering a missed alarm from idle', () => {
-    expect(recoverMissedAlarm(createState(), DEFAULT_CONFIG, 5_000)).toBeNull();
+  it('returns empty array when recovering a missed alarm from idle', () => {
+    expect(recoverMissedAlarm(createState(), DEFAULT_CONFIG, 5_000)).toEqual([]);
+  });
+
+  it('recovers through WORKING + SHORT_BREAK when both expired', () => {
+    const config = createConfig({
+      workDuration: 1_000,
+      shortBreakDuration: 500,
+    });
+    const state = createState({
+      phase: 'WORKING',
+      startTime: 1_000,
+      endTime: 2_000,
+      duration: 1_000,
+      sessionCount: 0,
+      cyclePosition: 0,
+      completedToday: 0,
+    });
+
+    // now = 5_000 means both work (ended at 2_000) and break (would end at 5_500)
+    // Actually break endTime = now + 500 = 5_500 which is > 5_000, so break is still active.
+    // Use now = 10_000 to ensure both are expired.
+    const steps = recoverMissedAlarm(state, config, 10_000);
+    expect(steps).toHaveLength(2);
+
+    expect(steps[0].before.phase).toBe('WORKING');
+    expect(steps[0].after.phase).toBe('SHORT_BREAK');
+
+    expect(steps[1].before.phase).toBe('SHORT_BREAK');
+    expect(steps[1].after.phase).toBe('IDLE');
+    expect(steps[1].after.cyclePosition).toBe(1);
+  });
+
+  it('recovers through WORKING to BREAK_SUGGESTION at cycle position 3', () => {
+    const config = createConfig({
+      workDuration: 1_000,
+      shortBreakDuration: 500,
+    });
+    const state = createState({
+      phase: 'WORKING',
+      startTime: 1_000,
+      endTime: 2_000,
+      duration: 1_000,
+      sessionCount: 3,
+      cyclePosition: 3,
+      completedToday: 3,
+    });
+
+    const steps = recoverMissedAlarm(state, config, 10_000);
+    expect(steps).toHaveLength(1);
+
+    expect(steps[0].before.phase).toBe('WORKING');
+    expect(steps[0].after.phase).toBe('BREAK_SUGGESTION');
+    expect(steps[0].after.sessionCount).toBe(4);
+    expect(steps[0].after.completedToday).toBe(4);
+  });
+
+  it('returns empty array when endTime is still in the future', () => {
+    const config = createConfig({ workDuration: 10_000 });
+    const state = createState({
+      phase: 'WORKING',
+      startTime: 1_000,
+      endTime: 11_000,
+      duration: 10_000,
+    });
+
+    expect(recoverMissedAlarm(state, config, 5_000)).toEqual([]);
   });
 
   it('returns correct remaining milliseconds', () => {

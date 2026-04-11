@@ -10,6 +10,7 @@ import {
   recoverMissedAlarm,
   skipLongBreak,
   startTimer,
+  type RecoveryStep,
 } from '@/lib/timer';
 import {
   addCompletedSession,
@@ -116,23 +117,27 @@ export default defineBackground(() => {
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const recovered = recoverMissedAlarm(state, config);
+    const steps = recoverMissedAlarm(state, config);
 
-    if (!recovered) {
+    if (steps.length === 0) {
       await refreshBadge();
       return;
     }
 
-    await setTimerState(recovered);
+    const finalState = steps[steps.length - 1].after;
+    await setTimerState(finalState);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
+    // Persist a completed session for each WORKING phase that was completed
+    for (const step of steps) {
+      if (step.before.phase === 'WORKING') {
+        await persistCompletedSession(step.before, Date.now());
+      }
     }
 
-    if (recovered.phase === 'SHORT_BREAK' && recovered.endTime !== null) {
-      await scheduleTimerAlarm(recovered.endTime);
+    if (isActivePhase(finalState.phase) && finalState.endTime !== null) {
+      await scheduleTimerAlarm(finalState.endTime);
       await startBadgeRefresh();
-    } else if (!isActivePhase(recovered.phase)) {
+    } else {
       await clearActiveAlarms();
     }
 
