@@ -139,6 +139,20 @@ export default defineBackground(() => {
     await refreshBadge();
   };
 
+  const reschedulePendingTimer = async (): Promise<void> => {
+    const state = await getTimerState();
+    const activePhases: string[] = ['WORKING', 'SHORT_BREAK', 'LONG_BREAK'];
+
+    if (activePhases.includes(state.phase) && state.endTime !== null && state.endTime > Date.now()) {
+      await browser.alarms.clear(ALARM_TIMER);
+      await browser.alarms.create(ALARM_TIMER, { when: state.endTime });
+      await startBadgeRefresh();
+      await refreshBadge();
+    } else {
+      await recoverFromMissedAlarm();
+    }
+  };
+
   const handleMessage = async (message: MessageAction) => {
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
 
@@ -205,8 +219,13 @@ export default defineBackground(() => {
     }
   };
 
-  browser.runtime.onInstalled.addListener(async () => {
-    await recoverFromMissedAlarm();
+  browser.runtime.onInstalled.addListener(async (details) => {
+    if (details.reason === 'update' || details.reason === 'chrome_update') {
+      await reschedulePendingTimer();
+    } else {
+      // Fresh install or unknown reason — run standard recovery
+      await recoverFromMissedAlarm();
+    }
   });
 
   browser.runtime.onStartup.addListener(async () => {
