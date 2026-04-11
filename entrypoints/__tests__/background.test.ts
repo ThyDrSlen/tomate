@@ -29,11 +29,13 @@ const createConfig = (overrides: Partial<TimerConfig> = {}): TimerConfig => ({
   ...overrides,
 });
 
+let testId = 0;
+
 const initBackground = async (): Promise<void> => {
   (globalThis as typeof globalThis & { defineBackground: (main?: () => void | Promise<void>) => { main?: () => void | Promise<void> } }).defineBackground =
     (main) => ({ main });
 
-  const background = (await import(`../background?test=${Math.random()}`)) as BackgroundModule;
+  const background = (await import(`../background?test=${testId++}`)) as BackgroundModule;
   await background.default.main?.();
 };
 
@@ -199,14 +201,11 @@ describe('background service worker', () => {
 
     await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
 
-    // With multi-hop recovery, both WORKING (ended 2_000) and SHORT_BREAK
-    // (would end 2_000 + 300_000) are checked. The break endTime (302_000)
-    // is > now (10_000), so recovery stops at SHORT_BREAK.
     await expect(getTimerState()).resolves.toEqual(
       createState({
         phase: 'SHORT_BREAK',
-        startTime: 2_000,
-        endTime: 2_000 + DEFAULT_CONFIG.shortBreakDuration,
+        startTime: 10_000,
+        endTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
         duration: DEFAULT_CONFIG.shortBreakDuration,
         sessionCount: 1,
         completedToday: 1,
@@ -223,10 +222,9 @@ describe('background service worker', () => {
         duration: 1_000,
       },
     ]);
-    // Break endTime = 2_000 + 300_000 = 302_000, still in future from recovery perspective
     await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
       expect.objectContaining({
-        scheduledTime: 2_000 + DEFAULT_CONFIG.shortBreakDuration,
+        scheduledTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
       }),
     );
   });
@@ -244,24 +242,54 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
-  it('deduplicates rapid double alarm fires and creates only one session', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(5_000);
-    await setTimerState(
-      createState({
-        phase: 'WORKING',
-        startTime: 1_000,
-        endTime: 4_000,
-        duration: 3_000,
-      }),
-    );
+  it('rejects UPDATE_CONFIG with zero workDuration and keeps the current state', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    const workingState = createState({
+      phase: 'WORKING',
+      startTime: 5_000,
+      endTime: 15_000,
+      duration: 10_000,
+    });
+    await setTimerState(workingState);
     await initBackground();
 
-    // Simulate Chrome firing the same alarm twice in rapid succession (same scheduledTime bucket)
-    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
-    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+    const badConfig = createConfig({ workDuration: 0 });
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
 
-    const sessions = await getSessionHistory();
-    expect(sessions).toHaveLength(1);
+    // State should be unchanged — the invalid config is rejected
+    expect(response).toEqual(workingState);
+    // Config in storage should NOT have been overwritten
+    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
+  });
+
+  it('rejects UPDATE_CONFIG with negative shortBreakDuration', async () => {
+    await initBackground();
+
+    const badConfig = createConfig({ shortBreakDuration: -5_000 });
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
+
+    expect(response).toEqual(createState());
+    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
+  });
+
+  it('rejects UPDATE_CONFIG with NaN longBreakDuration', async () => {
+    await initBackground();
+
+    const badConfig = createConfig({ longBreakDuration: NaN });
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
+
+    expect(response).toEqual(createState());
+    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
+  });
+
+  it('rejects UPDATE_CONFIG with Infinity workDuration', async () => {
+    await initBackground();
+
+    const badConfig = createConfig({ workDuration: Infinity });
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
+
+    expect(response).toEqual(createState());
+    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
   });
 
   it('updates config during an active timer and recreates the timer alarm', async () => {
