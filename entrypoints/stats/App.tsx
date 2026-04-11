@@ -6,11 +6,11 @@ import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } fr
 import Heatmap from '@/components/Heatmap';
 
 const INTENSITY_LEGEND = [
-  { color: '#F3F4F6', label: '0' },
-  { color: '#FCA5A5', label: '1' },
-  { color: '#EF4444', label: '2-3' },
-  { color: '#DC2626', label: '4-5' },
-  { color: '#991B1B', label: '6+' },
+  { color: '#F3F4F6', label: '0', ariaLabel: '0 sessions' },
+  { color: '#FCA5A5', label: '1', ariaLabel: '1 session' },
+  { color: '#EF4444', label: '2-3', ariaLabel: '2-3 sessions' },
+  { color: '#DC2626', label: '4-5', ariaLabel: '4-5 sessions' },
+  { color: '#991B1B', label: '6+', ariaLabel: '6+ sessions' },
 ] as const;
 
 type StatCardProps = {
@@ -70,7 +70,8 @@ export default function App() {
                 <div
                   class="w-3 h-3 rounded-sm"
                   style={{ "background-color": item.color }}
-                  title={item.label}
+                  title={item.ariaLabel}
+                  aria-label={item.ariaLabel}
                 />
               )}
             </For>
