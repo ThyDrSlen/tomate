@@ -145,9 +145,14 @@ export const getHeatmapData = async (days: number): Promise<Record<string, numbe
 
 export const getTodayCount = async (): Promise<number> => {
   const todayKey = toDateKey(Date.now());
-  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  const sessions = await getSessionHistory(1);
 
   return sessions.filter((session) => session.date === todayKey).length;
+};
+
+export const getTotalCount = async (): Promise<number> => {
+  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  return sessions.length;
 };
 
 export const getPendingCelebration = async (): Promise<boolean> =>
