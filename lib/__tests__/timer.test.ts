@@ -245,9 +245,12 @@ describe('timer state machine', () => {
 
   it('uses the default 25/5/30 minute config values', () => {
     expect(DEFAULT_CONFIG).toEqual({
+      configVersion: 2,
       workDuration: 25 * 60 * 1000,
       shortBreakDuration: 5 * 60 * 1000,
       longBreakDuration: 30 * 60 * 1000,
+      dailyGoal: 8,
+      openBreakTab: true,
     });
   });
 
