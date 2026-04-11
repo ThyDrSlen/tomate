@@ -142,10 +142,11 @@ export default defineBackground(() => {
   };
 
   const handleMessage = async (message: MessageAction) => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    const state = await getTimerState();
 
     switch (message.action) {
       case 'START_TIMER': {
+        const config = await getConfig();
         const nextState = startTimer(state, config);
         await setTimerState(nextState);
 
@@ -168,6 +169,7 @@ export default defineBackground(() => {
         return state;
       }
       case 'ACCEPT_LONG_BREAK': {
+        const config = await getConfig();
         const nextState = acceptLongBreak(state, config);
         await setTimerState(nextState);
 
