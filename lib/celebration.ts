@@ -27,5 +27,7 @@ export const playCelebration = (type: 'work' | 'milestone' | 'break'): void => {
 
   try {
     new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html')).play();
-  } catch {}
+  } catch (e) {
+    console.warn('Celebration audio failed:', e);
+  }
 };

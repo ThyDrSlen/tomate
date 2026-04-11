@@ -226,6 +226,12 @@ export default defineBackground(() => {
     }
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+
+    if (!isActivePhase(state.phase) && state.phase !== 'BREAK_SUGGESTION') {
+      await browser.alarms.clear(ALARM_TIMER);
+      return;
+    }
+
     const completed = completeTimer(state, config);
     await setTimerState(completed);
 
