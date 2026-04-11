@@ -18,6 +18,7 @@ const KEYS = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
+const MAX_SESSIONS = 2000;
 
 const startOfLocalDay = (timestamp: number): Date => {
   const date = new Date(timestamp);
@@ -53,8 +54,12 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
 };
 
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
+  // sessions is a fresh read from storage, so mutation is safe
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  sessions.push(session);
+  // only slice when we've exceeded the cap, avoiding an extra copy on every call
+  const trimmed = sessions.length > MAX_SESSIONS ? sessions.slice(-MAX_SESSIONS) : sessions;
+  await browser.storage.local.set({ [KEYS.SESSIONS]: trimmed });
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
