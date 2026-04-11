@@ -13,7 +13,6 @@ import {
 } from '@/lib/timer';
 import {
   addCompletedSession,
-  getBlockedSites,
   getConfig,
   getCurrentLabel,
   getTimerState,
@@ -93,40 +92,6 @@ export default defineBackground(() => {
     await Promise.all([browser.alarms.clear(ALARM_TIMER), browser.alarms.clear(ALARM_BADGE_REFRESH)]);
   };
 
-  const BLOCKING_RULE_ID_BASE = 1000;
-
-  const applyBlockingRules = async (sites: string[]): Promise<void> => {
-    const existingRules = await browser.declarativeNetRequest.getDynamicRules();
-    const removeRuleIds = existingRules.map((r) => r.id);
-
-    const addRules = sites
-      .filter((site) => site.trim().length > 0)
-      .map((site, index) => ({
-        id: BLOCKING_RULE_ID_BASE + index,
-        priority: 1,
-        action: { type: 'block' as const },
-        condition: {
-          urlFilter: site.trim(),
-          resourceTypes: [
-            'main_frame' as const,
-            'sub_frame' as const,
-            'xmlhttprequest' as const,
-          ],
-        },
-      }));
-
-    await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
-  };
-
-  const clearBlockingRules = async (): Promise<void> => {
-    const existingRules = await browser.declarativeNetRequest.getDynamicRules();
-    const removeRuleIds = existingRules.map((r) => r.id);
-
-    if (removeRuleIds.length > 0) {
-      await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules: [] });
-    }
-  };
-
   const persistCompletedSession = async (
     state: Awaited<ReturnType<typeof getTimerState>>,
     endTime: number,
@@ -154,12 +119,6 @@ export default defineBackground(() => {
     const recovered = recoverMissedAlarm(state, config);
 
     if (!recovered) {
-      // Timer hasn't expired yet — if it's still active, reschedule the alarm
-      // (alarms are cleared when the extension updates or the service worker restarts)
-      if (isActivePhase(state.phase) && state.endTime !== null) {
-        await scheduleTimerAlarm(state.endTime);
-        await startBadgeRefresh();
-      }
       await refreshBadge();
       return;
     }
@@ -246,6 +205,15 @@ export default defineBackground(() => {
     }
   };
 
+  // Async mutex: ensures onAlarm and handleMessage never interleave.
+  // Each operation is appended to the tail of the promise chain so that
+  // concurrent browser callbacks are serialized rather than overlapping.
+  let pendingOp: Promise<void> = Promise.resolve();
+  const withLock = (fn: () => Promise<void>): Promise<void> => {
+    pendingOp = pendingOp.then(fn).catch(() => {});
+    return pendingOp;
+  };
+
   browser.runtime.onInstalled.addListener(async () => {
     await recoverFromMissedAlarm();
   });
@@ -254,35 +222,21 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
-
-  browser.storage.onChanged.addListener(async (changes) => {
-    const blockedSitesChanged = 'blockedSites' in changes;
-    const timerStateChanged = 'timerState' in changes;
-
-    if (!blockedSitesChanged && !timerStateChanged) {
-      return;
-    }
-
-    // Use the new timerState from the change event when available to avoid a
-    // race condition where storage.local hasn't flushed the new value yet.
-    const phase = timerStateChanged
-      ? ((changes['timerState']?.newValue as { phase?: string } | undefined)?.phase ?? 'IDLE')
-      : (await getTimerState()).phase;
-
-    if (phase === 'WORKING') {
-      const sites = blockedSitesChanged
-        ? ((changes['blockedSites']?.newValue as string[] | undefined) ?? [])
-        : await getBlockedSites();
-      await applyBlockingRules(sites);
-    } else {
-      await clearBlockingRules();
-    }
+  // Returning the Promise keeps the message channel open in MV3 (Chrome 99+)
+  // and allows the fake browser test harness to await the full response.
+  browser.runtime.onMessage.addListener((message) => {
+    let resolve: (value: unknown) => void;
+    const result = new Promise((r) => { resolve = r; });
+    withLock(async () => {
+      const response = await handleMessage(message as MessageAction);
+      resolve!(response);
+    });
+    return result;
   });
 
-  browser.alarms.onAlarm.addListener(async (alarm) => {
+  browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
-      await refreshBadge();
+      void refreshBadge();
       return;
     }
 
@@ -290,43 +244,45 @@ export default defineBackground(() => {
       return;
     }
 
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const completed = completeTimer(state, config);
-    await setTimerState(completed);
+    return withLock(async () => {
+      const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+      const completed = completeTimer(state, config);
+      await setTimerState(completed);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-      });
-      if (config.openBreakTab !== false) {
-        try {
-          await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
-        } catch {
-          // tab creation can fail if no browser window is open
+      if (state.phase === 'WORKING') {
+        await persistCompletedSession(state, Date.now());
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: '🍅 Tomate Complete!',
+          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+        });
+        if (config.openBreakTab !== false) {
+          try {
+            await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
+          } catch {
+            // tab creation can fail if no browser window is open
+          }
         }
       }
-    }
 
-    if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-      });
-    }
+      if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+        });
+      }
 
-    if (isActivePhase(completed.phase) && completed.endTime !== null) {
-      await scheduleTimerAlarm(completed.endTime);
-      await startBadgeRefresh();
-    } else {
-      await clearActiveAlarms();
-    }
+      if (isActivePhase(completed.phase) && completed.endTime !== null) {
+        await scheduleTimerAlarm(completed.endTime);
+        await startBadgeRefresh();
+      } else {
+        await clearActiveAlarms();
+      }
 
-    await refreshBadge();
+      await refreshBadge();
+    });
   });
 });
