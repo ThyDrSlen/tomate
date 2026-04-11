@@ -205,8 +205,24 @@ export default defineBackground(() => {
     }
   };
 
-  browser.runtime.onInstalled.addListener(async () => {
-    await recoverFromMissedAlarm();
+  const reschedulePendingTimer = async (): Promise<void> => {
+    const [state] = await Promise.all([getTimerState()]);
+
+    if (isActivePhase(state.phase) && state.endTime !== null) {
+      await scheduleTimerAlarm(state.endTime);
+      await startBadgeRefresh();
+    }
+
+    await refreshBadge();
+  };
+
+  browser.runtime.onInstalled.addListener(async (details) => {
+    if (details.reason === 'install') {
+      await recoverFromMissedAlarm();
+    } else if (details.reason === 'update') {
+      await reschedulePendingTimer();
+    }
+    // 'browser_update': do nothing
   });
 
   browser.runtime.onStartup.addListener(async () => {
@@ -231,21 +247,25 @@ export default defineBackground(() => {
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-      });
+      if (typeof browser.notifications !== 'undefined') {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: '🍅 Tomate Complete!',
+          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+        });
+      }
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-      });
+      if (typeof browser.notifications !== 'undefined') {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+        });
+      }
     }
 
     if (isActivePhase(completed.phase) && completed.endTime !== null) {
