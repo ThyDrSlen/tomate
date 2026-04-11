@@ -59,7 +59,7 @@ export default defineBackground(() => {
         break;
       }
       case 'BREAK_SUGGESTION': {
-        text = `${state.completedToday}✓`;
+        text = `${todayCount}✓`;
         color = BADGE_GOLD;
         break;
       }
