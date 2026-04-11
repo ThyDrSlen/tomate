@@ -260,12 +260,14 @@ export default defineBackground(() => {
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-      });
+      if (typeof browser.notifications !== 'undefined') {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: '🍅 Tomate Complete!',
+          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+        });
+      }
       if (config.openBreakTab !== false) {
         try {
           await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
@@ -276,12 +278,14 @@ export default defineBackground(() => {
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-      });
+      if (typeof browser.notifications !== 'undefined') {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+        });
+      }
     }
 
     if (isActivePhase(completed.phase) && completed.endTime !== null) {
