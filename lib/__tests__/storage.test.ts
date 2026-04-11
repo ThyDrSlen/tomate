@@ -10,6 +10,7 @@ import {
   getHeatmapData,
   getPendingCelebration,
   getSessionHistory,
+  getSessionsForYear,
   getTimerState,
   getTodayCount,
   setConfig,
@@ -102,6 +103,17 @@ describe('storage helpers', () => {
     await addCompletedSession(outsideRange);
 
     await expect(getSessionHistory(2)).resolves.toEqual([withinRange, today]);
+  });
+
+  it('returns only sessions whose date falls within the given year', async () => {
+    const inYear = createSession(new Date(2026, 5, 15, 9, 0, 0).getTime(), { id: 'in-2026' });
+    const otherYear = createSession(new Date(2025, 11, 31, 9, 0, 0).getTime(), { id: 'in-2025' });
+
+    await addCompletedSession(inYear);
+    await addCompletedSession(otherYear);
+
+    await expect(getSessionsForYear(2026)).resolves.toEqual([inYear]);
+    await expect(getSessionsForYear(2025)).resolves.toEqual([otherYear]);
   });
 
   it('aggregates heatmap counts by local date key', async () => {

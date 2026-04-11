@@ -1,6 +1,6 @@
 import { createResource, For } from 'solid-js';
 
-import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
+import { getSessionsForYear, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
 
 import Heatmap from '@/components/Heatmap';
@@ -30,8 +30,10 @@ function StatCard(props: StatCardProps) {
 }
 
 export default function App() {
+  const currentYear = new Date().getFullYear();
+
   const [yearData] = createResource(() => getHeatmapData(365));
-  const [sessions] = createResource(() => getSessionHistory());
+  const [sessions] = createResource(() => getSessionsForYear(currentYear));
   const [todayCount] = createResource(() => getTodayCount());
 
   const total = () => computeTotalCount(sessions() ?? []);
