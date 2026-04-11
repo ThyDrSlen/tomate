@@ -14,5 +14,16 @@ export default defineConfig({
         '128': '/icons/icon-128.png',
       },
     },
+    web_accessible_resources: [
+      {
+        resources: ['sounds/*.mp3', 'icons/*.png'],
+        matches: ['<all_urls>'],
+        use_dynamic_url: true,
+      },
+    ],
+    content_security_policy: {
+      extension_pages:
+        "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
+    },
   },
 });
