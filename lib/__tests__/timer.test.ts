@@ -249,6 +249,7 @@ describe('timer state machine', () => {
       shortBreakDuration: 5 * 60 * 1000,
       longBreakDuration: 30 * 60 * 1000,
       openBreakTab: true,
+      dailyGoal: 8,
     });
   });
 

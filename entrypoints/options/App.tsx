@@ -11,6 +11,7 @@ export default function App() {
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
   const [openBreakTab, setOpenBreakTab] = createSignal(true);
+  const [dailyGoal, setDailyGoal] = createSignal(DEFAULT_CONFIG.dailyGoal);
   const [saved, setSaved] = createSignal(false);
 
   onMount(async () => {
@@ -19,6 +20,7 @@ export default function App() {
     setShortBreak(Math.round(config.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(config.openBreakTab !== false);
+    setDailyGoal(config.dailyGoal ?? DEFAULT_CONFIG.dailyGoal);
   });
 
   const handleSave = async () => {
@@ -27,6 +29,7 @@ export default function App() {
       shortBreakDuration: shortBreak() * MS_PER_MINUTE,
       longBreakDuration: longBreak() * MS_PER_MINUTE,
       openBreakTab: openBreakTab(),
+      dailyGoal: dailyGoal(),
     };
     await setConfig(config);
     await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
@@ -39,6 +42,7 @@ export default function App() {
     setShortBreak(Math.round(DEFAULT_CONFIG.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(DEFAULT_CONFIG.openBreakTab);
+    setDailyGoal(DEFAULT_CONFIG.dailyGoal);
   };
 
   return (
@@ -81,6 +85,19 @@ export default function App() {
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-gray-700">Daily Goal (tomates)</span>
+            <input
+              type="number"
+              min={0}
+              max={50}
+              value={dailyGoal()}
+              onInput={(e) => setDailyGoal(Number(e.currentTarget.value))}
+              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+            <span class="text-xs text-gray-400 mt-0.5 block">Set to 0 to disable the goal progress bar.</span>
           </label>
 
           <label class="flex items-center gap-3 cursor-pointer">
