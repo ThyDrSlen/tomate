@@ -240,6 +240,54 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
+  describe('invalid / corrupted message payloads', () => {
+    it('does not throw when the action field is missing and returns undefined', async () => {
+      await initBackground();
+
+      await expect(fakeBrowser.runtime.sendMessage({} as never)).resolves.toBeUndefined();
+    });
+
+    it('does not throw for an unknown action and returns the current state', async () => {
+      const storedState = createState({ phase: 'IDLE', completedToday: 2 });
+      await setTimerState(storedState);
+      await initBackground();
+
+      await expect(
+        fakeBrowser.runtime.sendMessage({ action: 'UNKNOWN_ACTION' } as never),
+      ).resolves.toEqual(storedState);
+    });
+
+    it('rejects UPDATE_CONFIG with a negative workDuration and leaves state unchanged', async () => {
+      const storedState = createState({ phase: 'IDLE' });
+      await setTimerState(storedState);
+      await initBackground();
+
+      const badConfig = createConfig({ workDuration: -1 });
+      const response = await fakeBrowser.runtime.sendMessage({
+        action: 'UPDATE_CONFIG',
+        config: badConfig,
+      });
+
+      expect(response).toEqual(storedState);
+      await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
+    });
+
+    it('rejects UPDATE_CONFIG with NaN workDuration and leaves state unchanged', async () => {
+      const storedState = createState({ phase: 'IDLE' });
+      await setTimerState(storedState);
+      await initBackground();
+
+      const badConfig = createConfig({ workDuration: NaN });
+      const response = await fakeBrowser.runtime.sendMessage({
+        action: 'UPDATE_CONFIG',
+        config: badConfig,
+      });
+
+      expect(response).toEqual(storedState);
+      await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
+    });
+  });
+
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });

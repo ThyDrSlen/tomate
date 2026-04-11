@@ -139,8 +139,17 @@ export default defineBackground(() => {
     await refreshBadge();
   };
 
+  const isValidConfig = (config: TimerConfig): boolean => {
+    const durations = [config.workDuration, config.shortBreakDuration, config.longBreakDuration];
+    return durations.every((d) => typeof d === 'number' && Number.isFinite(d) && d >= 1);
+  };
+
   const handleMessage = async (message: MessageAction) => {
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+
+    if (!message || !('action' in message)) {
+      return undefined;
+    }
 
     switch (message.action) {
       case 'START_TIMER': {
@@ -185,6 +194,9 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
+        if (!isValidConfig(message.config)) {
+          return state;
+        }
         await setConfig(message.config);
         const nextState = adjustDuration(state, message.config);
         await setTimerState(nextState);
