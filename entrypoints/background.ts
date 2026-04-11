@@ -205,6 +205,51 @@ export default defineBackground(() => {
     }
   };
 
+  /**
+   * Issue #100: Use `requestDomains` instead of `urlFilter` so that Chrome matches
+   * the exact hostname and all its subdomains correctly (e.g. blocking "twitter.com"
+   * also blocks "pbs.twimg.com" does NOT follow — but "mobile.twitter.com" does).
+   * `requestDomains` is the canonical per-domain matcher in Chrome's DNR API.
+   *
+   * Issue #101: Guard against Chrome's hard cap of 5000 dynamic rules.  If the list
+   * would exceed MAX_RULES we warn in the console and trim to the safe limit so that
+   * `updateDynamicRules` never silently fails.
+   */
+  const MAX_RULES: number =
+    (typeof chrome !== 'undefined' &&
+      (chrome?.declarativeNetRequest?.MAX_NUMBER_OF_DYNAMIC_RULES as number | undefined)) ||
+    5000;
+
+  const applyBlockingRules = async (blockedSites: string[]): Promise<void> => {
+    // Issue #101: trim to the Chrome dynamic-rule cap so the API call never silently fails.
+    if (blockedSites.length > MAX_RULES) {
+      console.warn(
+        `[tomate] Blocked-sites list (${blockedSites.length}) exceeds Chrome's dynamic rule limit (${MAX_RULES}). ` +
+          `Only the first ${MAX_RULES} sites will be blocked.`,
+      );
+      blockedSites = blockedSites.slice(0, MAX_RULES);
+    }
+
+    const addRules = blockedSites.map((hostname, index) => ({
+      id: index + 1,
+      priority: 1,
+      action: { type: 'block' as const },
+      condition: {
+        // Issue #100: `requestDomains` matches the exact domain and all subdomains,
+        // e.g. ["twitter.com"] also blocks mobile.twitter.com, api.twitter.com, etc.
+        // This is more reliable than urlFilter patterns which can miss CDN subdomains.
+        requestDomains: [hostname],
+        resourceTypes: ['main_frame' as const],
+      },
+    }));
+
+    try {
+      await browser.declarativeNetRequest.updateDynamicRules({ addRules });
+    } catch (err) {
+      console.error('[tomate] Failed to apply blocking rules:', err);
+    }
+  };
+
   browser.runtime.onInstalled.addListener(async () => {
     await recoverFromMissedAlarm();
   });

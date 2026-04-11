@@ -248,6 +248,7 @@ describe('timer state machine', () => {
       workDuration: 25 * 60 * 1000,
       shortBreakDuration: 5 * 60 * 1000,
       longBreakDuration: 30 * 60 * 1000,
+      blockedSites: [],
     });
   });
 
