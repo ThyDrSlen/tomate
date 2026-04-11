@@ -74,6 +74,8 @@ export default function Heatmap(props: HeatmapProps) {
 
   const toMonRow = (jsDay: number) => (jsDay === 0 ? 6 : jsDay - 1);
 
+  const MIN_WEEKS = 12;
+
   const columns = createMemo(() => {
     const cells = grid();
     const cols: (HeatmapCell | null)[][] = [];
@@ -95,6 +97,11 @@ export default function Heatmap(props: HeatmapProps) {
 
     if (currentCol.some((c) => c !== null)) {
       cols.push(currentCol);
+    }
+
+    // Pad with empty columns at the start to ensure at least MIN_WEEKS columns
+    while (cols.length < MIN_WEEKS) {
+      cols.unshift(Array(7).fill(null));
     }
 
     return cols;
