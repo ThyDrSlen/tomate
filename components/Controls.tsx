@@ -11,7 +11,7 @@ type ControlsProps = {
 
 export default function Controls(props: ControlsProps) {
   return (
-    <div class="mt-5 flex gap-3 justify-center">
+    <div class="mt-5 flex gap-3 justify-center transition-opacity duration-200">
       <Switch>
         <Match when={props.phase === 'IDLE'}>
           <button

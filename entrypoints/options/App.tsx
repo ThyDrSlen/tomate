@@ -12,7 +12,6 @@ export default function App() {
   const [longBreak, setLongBreak] = createSignal(30);
   const [openBreakTab, setOpenBreakTab] = createSignal(true);
   const [saved, setSaved] = createSignal(false);
-  const [isSaving, setIsSaving] = createSignal(false);
 
   onMount(async () => {
     const config = await getConfig();
@@ -23,22 +22,16 @@ export default function App() {
   });
 
   const handleSave = async () => {
-    if (isSaving()) return;
-    setIsSaving(true);
-    try {
-      const config: TimerConfig = {
-        workDuration: work() * MS_PER_MINUTE,
-        shortBreakDuration: shortBreak() * MS_PER_MINUTE,
-        longBreakDuration: longBreak() * MS_PER_MINUTE,
-        openBreakTab: openBreakTab(),
-      };
-      await setConfig(config);
-      await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } finally {
-      setIsSaving(false);
-    }
+    const config: TimerConfig = {
+      workDuration: work() * MS_PER_MINUTE,
+      shortBreakDuration: shortBreak() * MS_PER_MINUTE,
+      longBreakDuration: longBreak() * MS_PER_MINUTE,
+      openBreakTab: openBreakTab(),
+    };
+    await setConfig(config);
+    await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   };
 
   const handleReset = () => {
@@ -49,44 +42,44 @@ export default function App() {
   };
 
   return (
-    <div class="min-h-screen bg-red-50 flex items-start justify-center pt-16">
-      <div class="w-full max-w-[400px] bg-white rounded-lg shadow-sm p-6">
-        <h1 class="text-xl font-bold text-red-600 mb-6">Tomate Settings</h1>
+    <div class="min-h-screen bg-red-50 dark:bg-gray-900 flex items-start justify-center pt-16">
+      <div class="w-full max-w-[400px] bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+        <h1 class="text-xl font-bold text-red-600 dark:text-red-400 mb-6">Tomate Settings</h1>
 
         <div class="space-y-4">
           <label class="block">
-            <span class="text-sm font-medium text-gray-700">Work Duration (minutes)</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Work Duration (minutes)</span>
             <input
               type="number"
               min={1}
               max={120}
               value={work()}
               onInput={(e) => setWork(Number(e.currentTarget.value))}
-              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:border-red-500 dark:focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-500 dark:focus:ring-red-400"
             />
           </label>
 
           <label class="block">
-            <span class="text-sm font-medium text-gray-700">Short Break (minutes)</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Short Break (minutes)</span>
             <input
               type="number"
               min={1}
               max={30}
               value={shortBreak()}
               onInput={(e) => setShortBreak(Number(e.currentTarget.value))}
-              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:border-red-500 dark:focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-500 dark:focus:ring-red-400"
             />
           </label>
 
           <label class="block">
-            <span class="text-sm font-medium text-gray-700">Long Break (minutes)</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Long Break (minutes)</span>
             <input
               type="number"
               min={5}
               max={60}
               value={longBreak()}
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
-              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:border-red-500 dark:focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-500 dark:focus:ring-red-400"
             />
           </label>
 
@@ -95,9 +88,9 @@ export default function App() {
               type="checkbox"
               checked={openBreakTab()}
               onChange={(e) => setOpenBreakTab(e.currentTarget.checked)}
-              class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+              class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-red-600 dark:text-red-400 focus:ring-red-500 dark:focus:ring-red-400"
             />
-            <span class="text-sm font-medium text-gray-700">Open stats tab when session completes</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Open stats tab when session completes</span>
           </label>
         </div>
 
@@ -105,22 +98,21 @@ export default function App() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={isSaving()}
-            class="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="bg-red-600 dark:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 dark:focus:ring-red-400 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
           >
-            {isSaving() ? 'Saving...' : 'Save'}
+            Save
           </button>
 
           <button
             type="button"
             onClick={handleReset}
-            class="text-sm text-gray-500 hover:text-gray-700 underline"
+            class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
           >
             Reset to defaults
           </button>
 
           <Show when={saved()}>
-            <span class="text-sm text-green-600">Settings saved ✓</span>
+            <span class="text-sm text-green-600 dark:text-green-400">Settings saved ✓</span>
           </Show>
         </div>
       </div>
