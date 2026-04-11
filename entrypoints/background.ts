@@ -205,7 +205,49 @@ export default defineBackground(() => {
     }
   };
 
+  /**
+   * Applies declarativeNetRequest dynamic rules for all blocked sites.
+   *
+   * URL filter format: The `||hostname` prefix is the correct filter syntax per the
+   * Chrome declarativeNetRequest docs. It matches the exact domain and all its subdomains
+   * (e.g. `||example.com` blocks example.com, www.example.com, sub.example.com, etc.).
+   * This is intentionally different from `*hostname*`, which is a plain substring match
+   * and does not anchor to domain boundaries.
+   */
+  const applyBlockingRules = async (blockedSites: string[]): Promise<void> => {
+    const addRules = blockedSites.map((hostname, index) => ({
+      id: index + 1,
+      priority: 1,
+      action: { type: 'block' as const },
+      condition: {
+        // `||hostname` anchors to the domain + all subdomains per Chrome DNR spec.
+        urlFilter: `||${hostname}`,
+        resourceTypes: ['main_frame' as const],
+      },
+    }));
+
+    try {
+      await browser.declarativeNetRequest.updateDynamicRules({ addRules });
+    } catch (err) {
+      console.error('[tomate] Failed to apply blocking rules:', err);
+    }
+  };
+
   browser.runtime.onInstalled.addListener(async () => {
+    // Clear all existing dynamic rules before re-applying from current config
+    // so stale rules from a previous install/version do not persist. (#100)
+    const existingRules = await browser.declarativeNetRequest.getDynamicRules();
+    if (existingRules.length > 0) {
+      await browser.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: existingRules.map((r: { id: number }) => r.id),
+      });
+    }
+
+    const config = await getConfig();
+    if (config.blockedSites.length > 0) {
+      await applyBlockingRules(config.blockedSites);
+    }
+
     await recoverFromMissedAlarm();
   });
 

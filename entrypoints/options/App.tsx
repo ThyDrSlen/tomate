@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from 'solid-js';
+import { createSignal, onMount, Show, For } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { getConfig, setConfig } from '@/lib/storage';
@@ -6,17 +6,30 @@ import { DEFAULT_CONFIG, type TimerConfig } from '@/lib/types';
 
 const MS_PER_MINUTE = 60_000;
 
+/**
+ * RFC 1123 hostname validation.
+ * Accepts labels of 1–63 characters each, separated by dots.
+ * Each label must start and end with an alphanumeric character and may contain hyphens.
+ */
+const VALID_HOSTNAME =
+  /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/;
+
 export default function App() {
   const [work, setWork] = createSignal(25);
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
   const [saved, setSaved] = createSignal(false);
 
+  const [blockedSites, setBlockedSites] = createSignal<string[]>([]);
+  const [siteInput, setSiteInput] = createSignal('');
+  const [siteError, setSiteError] = createSignal('');
+
   onMount(async () => {
     const config = await getConfig();
     setWork(Math.round(config.workDuration / MS_PER_MINUTE));
     setShortBreak(Math.round(config.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
+    setBlockedSites(config.blockedSites ?? []);
   });
 
   const handleSave = async () => {
@@ -24,6 +37,7 @@ export default function App() {
       workDuration: work() * MS_PER_MINUTE,
       shortBreakDuration: shortBreak() * MS_PER_MINUTE,
       longBreakDuration: longBreak() * MS_PER_MINUTE,
+      blockedSites: blockedSites(),
     };
     await setConfig(config);
     await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
@@ -35,6 +49,35 @@ export default function App() {
     setWork(Math.round(DEFAULT_CONFIG.workDuration / MS_PER_MINUTE));
     setShortBreak(Math.round(DEFAULT_CONFIG.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
+  };
+
+  const handleAddSite = () => {
+    const hostname = siteInput().trim().toLowerCase();
+
+    if (!hostname) {
+      setSiteError('Please enter a hostname.');
+      return;
+    }
+
+    if (!VALID_HOSTNAME.test(hostname)) {
+      setSiteError(
+        'Invalid hostname. Enter a plain domain like "example.com" (no http://, no paths, no wildcards).',
+      );
+      return;
+    }
+
+    if (blockedSites().includes(hostname)) {
+      setSiteError('This site is already in the list.');
+      return;
+    }
+
+    setSiteError('');
+    setBlockedSites((prev) => [...prev, hostname]);
+    setSiteInput('');
+  };
+
+  const handleRemoveSite = (hostname: string) => {
+    setBlockedSites((prev) => prev.filter((s) => s !== hostname));
   };
 
   return (
@@ -99,6 +142,61 @@ export default function App() {
 
           <Show when={saved()}>
             <span class="text-sm text-green-600">Settings saved ✓</span>
+          </Show>
+        </div>
+
+        <div class="mt-8 border-t border-gray-100 pt-6">
+          <h2 class="text-base font-semibold text-gray-800 mb-1">Blocked Sites</h2>
+          <p class="text-xs text-gray-500 mb-4">
+            Sites blocked during work sessions. Enter hostnames only (e.g. <code>twitter.com</code>).
+            Changes take effect after saving.
+          </p>
+
+          <div class="flex gap-2">
+            <input
+              type="text"
+              placeholder="example.com"
+              value={siteInput()}
+              onInput={(e) => {
+                setSiteInput(e.currentTarget.value);
+                setSiteError('');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAddSite();
+              }}
+              class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+            <button
+              type="button"
+              onClick={handleAddSite}
+              class="bg-red-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+            >
+              Add
+            </button>
+          </div>
+
+          <Show when={siteError()}>
+            <p class="mt-1 text-xs text-red-600">{siteError()}</p>
+          </Show>
+
+          <Show when={blockedSites().length > 0}>
+            <ul class="mt-3 space-y-1">
+              <For each={blockedSites()}>
+                {(hostname) => (
+                  <li class="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-800">
+                    <span>{hostname}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSite(hostname)}
+                      class="ml-2 text-gray-400 hover:text-red-600 focus:outline-none"
+                      aria-label={`Remove ${hostname}`}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                )}
+              </For>
+            </ul>
           </Show>
         </div>
       </div>
