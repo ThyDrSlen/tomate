@@ -4,6 +4,7 @@ import { browser } from 'wxt/browser';
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
 import {
+  getConfig,
   getPendingCelebration,
   setPendingCelebration,
   getCurrentLabel,
@@ -37,7 +38,8 @@ export default function App() {
 
     const pending = await getPendingCelebration();
     if (pending) {
-      playCelebration('work');
+      const config = await getConfig();
+      playCelebration('work', config.playCompletionSound ?? true);
       await setPendingCelebration(false);
     }
 

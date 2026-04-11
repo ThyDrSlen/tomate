@@ -10,6 +10,7 @@ export default function App() {
   const [work, setWork] = createSignal(25);
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
+  const [playCompletionSound, setPlayCompletionSound] = createSignal(true);
   const [saved, setSaved] = createSignal(false);
 
   onMount(async () => {
@@ -17,6 +18,7 @@ export default function App() {
     setWork(Math.round(config.workDuration / MS_PER_MINUTE));
     setShortBreak(Math.round(config.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
+    setPlayCompletionSound(config.playCompletionSound ?? true);
   });
 
   const handleSave = async () => {
@@ -24,6 +26,7 @@ export default function App() {
       workDuration: work() * MS_PER_MINUTE,
       shortBreakDuration: shortBreak() * MS_PER_MINUTE,
       longBreakDuration: longBreak() * MS_PER_MINUTE,
+      playCompletionSound: playCompletionSound(),
     };
     await setConfig(config);
     await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
@@ -35,6 +38,7 @@ export default function App() {
     setWork(Math.round(DEFAULT_CONFIG.workDuration / MS_PER_MINUTE));
     setShortBreak(Math.round(DEFAULT_CONFIG.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
+    setPlayCompletionSound(DEFAULT_CONFIG.playCompletionSound);
   };
 
   return (
@@ -77,6 +81,16 @@ export default function App() {
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+          </label>
+
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={playCompletionSound()}
+              onChange={(e) => setPlayCompletionSound(e.currentTarget.checked)}
+              class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+            />
+            <span class="text-sm font-medium text-gray-700">Play completion sound</span>
           </label>
         </div>
 
