@@ -13,6 +13,7 @@ import {
 } from '@/lib/timer';
 import {
   addCompletedSession,
+  getBlockedSites,
   getConfig,
   getCurrentLabel,
   getTimerState,
@@ -31,6 +32,48 @@ export type MessageAction =
   | { action: 'ACCEPT_LONG_BREAK' }
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
+
+const MAX_BLOCKED_SITES = 100;
+
+type DnrRule = {
+  id: number;
+  priority: number;
+  action: { type: string };
+  condition: { urlFilter: string; resourceTypes: string[] };
+};
+
+declare const chrome: {
+  declarativeNetRequest: {
+    getDynamicRules(): Promise<DnrRule[]>;
+    updateDynamicRules(options: { removeRuleIds: number[]; addRules: DnrRule[] }): Promise<void>;
+  };
+};
+
+const applyBlockingRules = async (sites: string[]): Promise<void> => {
+  const sitesToBlock = sites.slice(0, MAX_BLOCKED_SITES);
+
+  const newRules: DnrRule[] = sitesToBlock.map((site, index) => ({
+    id: index + 1,
+    priority: 1,
+    action: { type: 'block' },
+    condition: {
+      urlFilter: site,
+      resourceTypes: ['main_frame'],
+    },
+  }));
+
+  const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
+  const existingIds = existingRules.map((r) => r.id);
+
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: existingIds,
+      addRules: newRules,
+    });
+  } catch (e) {
+    console.error('Failed to update blocking rules:', e);
+  }
+};
 
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
@@ -207,10 +250,21 @@ export default defineBackground(() => {
 
   browser.runtime.onInstalled.addListener(async () => {
     await recoverFromMissedAlarm();
+    const sites = await getBlockedSites();
+    applyBlockingRules(sites).catch((e) => console.error('Failed to apply blocking rules on install:', e));
   });
 
   browser.runtime.onStartup.addListener(async () => {
     await recoverFromMissedAlarm();
+    const sites = await getBlockedSites();
+    applyBlockingRules(sites).catch((e) => console.error('Failed to apply blocking rules on startup:', e));
+  });
+
+  browser.storage.onChanged.addListener((changes: Record<string, { newValue?: unknown }>, area: string) => {
+    if (area === 'local' && 'blockedSites' in changes) {
+      const sites = (changes['blockedSites'].newValue as string[]) ?? [];
+      applyBlockingRules(sites).catch((e) => console.error('Failed to apply blocking rules on change:', e));
+    }
   });
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
