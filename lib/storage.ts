@@ -14,6 +14,7 @@ const KEYS = {
   SESSIONS: 'sessions',
   PENDING_CELEBRATION: 'pendingCelebration',
   CURRENT_LABEL: 'currentLabel',
+  BLOCKED_SITES: 'blockedSites',
 } as const;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -102,4 +103,11 @@ export const getCurrentLabel = async (): Promise<string> =>
 
 export const setCurrentLabel = async (label: string): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CURRENT_LABEL]: label.slice(0, MAX_LABEL_LENGTH) });
+};
+
+export const getBlockedSites = async (): Promise<string[]> =>
+  (await getStoredValue<string[]>(KEYS.BLOCKED_SITES)) ?? [];
+
+export const setBlockedSites = async (sites: string[]): Promise<void> => {
+  await browser.storage.local.set({ [KEYS.BLOCKED_SITES]: sites });
 };

@@ -13,6 +13,7 @@ import {
 } from '@/lib/timer';
 import {
   addCompletedSession,
+  getBlockedSites,
   getConfig,
   getCurrentLabel,
   getTimerState,
@@ -22,6 +23,7 @@ import {
   setTimerState,
   toDateKey,
 } from '@/lib/storage';
+import { applyBlockingRules, clearBlockingRules } from '@/lib/blocking';
 import type { CompletedSession, TimerConfig } from '@/lib/types';
 
 export type MessageAction =
@@ -205,12 +207,27 @@ export default defineBackground(() => {
     }
   };
 
+  const applyBlockingOnStartup = async (): Promise<void> => {
+    const [startupState, startupSites] = await Promise.all([getTimerState(), getBlockedSites()]);
+    try {
+      if (startupState.phase === 'WORKING' && startupSites.length > 0) {
+        await applyBlockingRules(startupSites);
+      } else {
+        await clearBlockingRules();
+      }
+    } catch {
+      // blocking rules are best-effort; don't crash the handler
+    }
+  };
+
   browser.runtime.onInstalled.addListener(async () => {
     await recoverFromMissedAlarm();
+    await applyBlockingOnStartup();
   });
 
   browser.runtime.onStartup.addListener(async () => {
     await recoverFromMissedAlarm();
+    await applyBlockingOnStartup();
   });
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
