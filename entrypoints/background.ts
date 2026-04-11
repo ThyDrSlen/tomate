@@ -33,6 +33,8 @@ export type MessageAction =
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
 
 export default defineBackground(() => {
+  let recoveryScheduled = false;
+
   const ALARM_TIMER = 'tomate-timer';
   const ALARM_BADGE_REFRESH = 'badge-refresh';
   const BADGE_RED = '#DC2626';
@@ -206,10 +208,14 @@ export default defineBackground(() => {
   };
 
   browser.runtime.onInstalled.addListener(async () => {
+    if (recoveryScheduled) return;
+    recoveryScheduled = true;
     await recoverFromMissedAlarm();
   });
 
   browser.runtime.onStartup.addListener(async () => {
+    if (recoveryScheduled) return;
+    recoveryScheduled = true;
     await recoverFromMissedAlarm();
   });
 
