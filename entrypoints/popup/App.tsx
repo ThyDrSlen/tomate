@@ -51,7 +51,10 @@ export default function App() {
   createEffect(() => {
     const s = state();
     if (isActivePhase(s.phase) && s.endTime) {
-      const tick = () => setRemaining(Math.max(0, s.endTime! - Date.now()));
+      const tick = () => {
+        const current = state();
+        setRemaining(Math.max(0, (current.endTime ?? 0) - Date.now()));
+      };
       tick();
       const id = setInterval(tick, 1000);
       onCleanup(() => clearInterval(id));
