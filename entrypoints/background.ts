@@ -20,8 +20,8 @@ import {
   setConfig,
   setPendingCelebration,
   setTimerState,
-  toDateKey,
 } from '@/lib/storage';
+import { toDateKey } from '@/lib/utils';
 import type { CompletedSession, TimerConfig } from '@/lib/types';
 
 export type MessageAction =
@@ -106,7 +106,7 @@ export default defineBackground(() => {
       label,
       startTime: state.startTime,
       endTime,
-      date: toDateKey(state.startTime),
+      date: toDateKey(new Date(state.startTime!)),
       duration: state.duration,
     };
 

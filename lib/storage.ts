@@ -7,6 +7,7 @@ import {
   type TimerConfig,
   type TimerState,
 } from './types';
+import { toDateKey } from './utils';
 
 const KEYS = {
   TIMER_STATE: 'timerState',
@@ -27,15 +28,6 @@ const startOfLocalDay = (timestamp: number): Date => {
 const getStoredValue = async <T>(key: string): Promise<T | undefined> => {
   const result = await browser.storage.local.get(key);
   return result[key] as T | undefined;
-};
-
-export const toDateKey = (timestamp: number): string => {
-  const date = new Date(timestamp);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
 };
 
 export const getTimerState = async (): Promise<TimerState> =>
@@ -69,7 +61,7 @@ export const getSessionHistory = async (days?: number): Promise<CompletedSession
   }
 
   const today = startOfLocalDay(Date.now()).getTime();
-  const earliestKey = toDateKey(today - (days - 1) * DAY_MS);
+  const earliestKey = toDateKey(new Date(today - (days - 1) * DAY_MS));
 
   return sessions.filter((session) => session.date >= earliestKey);
 };
@@ -84,7 +76,7 @@ export const getHeatmapData = async (days: number): Promise<Record<string, numbe
 };
 
 export const getTodayCount = async (): Promise<number> => {
-  const todayKey = toDateKey(Date.now());
+  const todayKey = toDateKey(new Date(Date.now()));
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
 
   return sessions.filter((session) => session.date === todayKey).length;

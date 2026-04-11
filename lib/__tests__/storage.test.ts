@@ -16,8 +16,8 @@ import {
   setCurrentLabel,
   setPendingCelebration,
   setTimerState,
-  toDateKey,
 } from '../storage';
+import { toDateKey } from '../utils';
 import { DEFAULT_CONFIG, INITIAL_STATE, type CompletedSession, type TimerConfig, type TimerState } from '../types';
 
 const createState = (overrides: Partial<TimerState> = {}): TimerState => ({
@@ -35,7 +35,7 @@ const createSession = (timestamp: number, overrides: Partial<CompletedSession> =
   label: overrides.label ?? 'Deep work',
   startTime: overrides.startTime ?? timestamp,
   endTime: overrides.endTime ?? timestamp + 1_500_000,
-  date: overrides.date ?? toDateKey(timestamp),
+  date: overrides.date ?? toDateKey(new Date(timestamp)),
   duration: overrides.duration ?? 1_500_000,
 });
 
@@ -114,8 +114,8 @@ describe('storage helpers', () => {
     await addCompletedSession(createSession(dateB, { id: 'b-1' }));
 
     await expect(getHeatmapData(30)).resolves.toEqual({
-      [toDateKey(dateA)]: 3,
-      [toDateKey(dateB)]: 1,
+      [toDateKey(new Date(dateA))]: 3,
+      [toDateKey(new Date(dateB))]: 1,
     });
   });
 

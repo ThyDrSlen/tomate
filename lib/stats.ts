@@ -1,20 +1,14 @@
 import type { CompletedSession } from './types';
+import { toDateKey } from './utils';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-const toDateKey = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 export const computeTotalCount = (sessions: CompletedSession[]): number => sessions.length;
 
 export const computeWeekCount = (sessions: CompletedSession[]): number => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const weekAgo = new Date(today.getTime() - 6 * DAY_MS);
+  const weekAgo = new Date(today.getTime() - 7 * DAY_MS);
   const cutoff = toDateKey(weekAgo);
 
   return sessions.filter((s) => s.date >= cutoff).length;
