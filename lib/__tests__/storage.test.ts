@@ -149,4 +149,52 @@ describe('storage helpers', () => {
     await setPendingCelebration(false);
     await expect(getPendingCelebration()).resolves.toBe(false);
   });
+
+  it('caps sessions to MAX_SESSIONS (2000) when adding a new session', async () => {
+    // Pre-fill 2000 sessions
+    const bulk: CompletedSession[] = [];
+    for (let i = 0; i < 2000; i++) {
+      bulk.push(createSession(i, { id: `s-${i}` }));
+    }
+    await fakeBrowser.storage.local.set({ sessions: bulk });
+
+    const newSession = createSession(99999, { id: 'new' });
+    await addCompletedSession(newSession);
+
+    const stored = await fakeBrowser.storage.local.get('sessions');
+    const result = stored['sessions'] as CompletedSession[];
+    expect(result.length).toBe(2000);
+    expect(result[result.length - 1].id).toBe('new');
+    expect(result[0].id).toBe('s-1'); // oldest was dropped
+  });
+
+  it('retries and applies cap on QuotaExceededError', async () => {
+    // Pre-fill 1999 sessions
+    const bulk: CompletedSession[] = [];
+    for (let i = 0; i < 1999; i++) {
+      bulk.push(createSession(i, { id: `s-${i}` }));
+    }
+    await fakeBrowser.storage.local.set({ sessions: bulk });
+
+    let callCount = 0;
+    const originalSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+      callCount++;
+      if (callCount === 1) {
+        const err = new Error('QuotaExceededError');
+        err.name = 'QuotaExceededError';
+        throw err;
+      }
+      return originalSet(items);
+    });
+
+    const newSession = createSession(99999, { id: 'new' });
+    await addCompletedSession(newSession);
+
+    expect(callCount).toBe(2);
+    const stored = await fakeBrowser.storage.local.get('sessions');
+    const result = stored['sessions'] as CompletedSession[];
+    expect(result.length).toBeLessThanOrEqual(2000);
+    expect(result[result.length - 1].id).toBe('new');
+  });
 });

@@ -18,6 +18,8 @@ const KEYS = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
+const MAX_SESSIONS = 2000;
+const PRUNE_FACTOR = 0.1;
 
 const startOfLocalDay = (timestamp: number): Date => {
   const date = new Date(timestamp);
@@ -52,9 +54,28 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
 };
 
+const pruneOldestSessions = (sessions: CompletedSession[]): CompletedSession[] => {
+  const pruneCount = Math.max(1, Math.floor(sessions.length * PRUNE_FACTOR));
+  return sessions.slice(pruneCount);
+};
+
+const capSessions = (sessions: CompletedSession[]): CompletedSession[] =>
+  sessions.length > MAX_SESSIONS ? sessions.slice(sessions.length - MAX_SESSIONS) : sessions;
+
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  const toPersist = capSessions([...sessions, session]);
+  try {
+    await browser.storage.local.set({ [KEYS.SESSIONS]: toPersist });
+  } catch (err: unknown) {
+    const isQuota =
+      err instanceof Error &&
+      (err.name === 'QuotaExceededError' || err.message.toLowerCase().includes('quota'));
+    if (!isQuota) throw err;
+    const pruned = pruneOldestSessions(sessions);
+    const retryPersist = capSessions([...pruned, session]);
+    await browser.storage.local.set({ [KEYS.SESSIONS]: retryPersist });
+  }
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
