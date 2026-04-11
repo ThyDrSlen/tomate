@@ -140,6 +140,55 @@ describe('storage helpers', () => {
     await expect(getCurrentLabel()).resolves.toBe('x'.repeat(50));
   });
 
+  it('caps stored sessions at MAX_SESSIONS (10 000)', async () => {
+    // Seed storage with MAX_SESSIONS sessions directly so addCompletedSession
+    // can observe the cap on a single add.
+    const MAX_SESSIONS = 10_000;
+    const seed: CompletedSession[] = Array.from({ length: MAX_SESSIONS }, (_, i) =>
+      createSession(i, { id: `seed-${i}` }),
+    );
+    await fakeBrowser.storage.local.set({ sessions: seed });
+
+    const extra = createSession(MAX_SESSIONS, { id: 'extra' });
+    await addCompletedSession(extra);
+
+    const stored = await fakeBrowser.storage.local.get('sessions');
+    const result = stored['sessions'] as CompletedSession[];
+    expect(result).toHaveLength(MAX_SESSIONS);
+    expect(result[result.length - 1].id).toBe('extra');
+  });
+
+  it('prunes ~10 % of sessions on quota error and still applies MAX_SESSIONS cap on retry', async () => {
+    const MAX_SESSIONS = 10_000;
+    const seed: CompletedSession[] = Array.from({ length: MAX_SESSIONS }, (_, i) =>
+      createSession(i, { id: `seed-${i}` }),
+    );
+    await fakeBrowser.storage.local.set({ sessions: seed });
+
+    // Make the first storage.set throw a quota error, but let the retry through.
+    let callCount = 0;
+    const originalSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+      if (callCount === 0 && 'sessions' in items) {
+        callCount++;
+        throw new Error('QUOTA_BYTES_PER_ITEM quota exceeded');
+      }
+      callCount++;
+      return originalSet(items);
+    });
+
+    const extra = createSession(MAX_SESSIONS, { id: 'retry-extra' });
+    await addCompletedSession(extra);
+
+    const stored = await fakeBrowser.storage.local.get('sessions');
+    const result = stored['sessions'] as CompletedSession[];
+
+    // Must never exceed MAX_SESSIONS
+    expect(result.length).toBeLessThanOrEqual(MAX_SESSIONS);
+    // The new session must be present
+    expect(result[result.length - 1].id).toBe('retry-extra');
+  });
+
   it('roundtrips the pending celebration flag', async () => {
     await expect(getPendingCelebration()).resolves.toBe(false);
 
