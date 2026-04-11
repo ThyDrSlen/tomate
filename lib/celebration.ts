@@ -25,13 +25,8 @@ const CONFETTI_CONFIGS: Record<string, confetti.Options> = {
 export const playCelebration = (type: 'work' | 'milestone' | 'break'): void => {
   try {
     confetti(CONFETTI_CONFIGS[type]);
-  } catch (e) {
-    console.warn('[tomate] confetti failed:', e);
-  }
-
-  try {
     new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html')).play();
-  } catch (e) {
-    console.warn('[tomate] celebration audio failed:', e);
+  } catch {
+    // Non-critical — swallow confetti/audio errors so the popup stays alive
   }
 };
