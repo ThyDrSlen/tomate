@@ -54,6 +54,8 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
 
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  const existing = sessions.find(s => s.id === session.id);
+  if (existing) return; // already persisted, skip
   await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
 };
 

@@ -102,7 +102,7 @@ export default defineBackground(() => {
 
     const label = await getCurrentLabel();
     const session: CompletedSession = {
-      id: crypto.randomUUID(),
+      id: `session-${state.startTime}`,
       label,
       startTime: state.startTime,
       endTime,
