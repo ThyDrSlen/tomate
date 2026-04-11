@@ -32,6 +32,17 @@ export type MessageAction =
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
 
+/**
+ * Returns true when every duration field in a TimerConfig is a positive
+ * finite number.  Guards against zero / negative / NaN / Infinity values
+ * that would cause adjustDuration to schedule an alarm in the past and
+ * trigger an infinite alarm loop (#237).
+ */
+const isValidConfig = (config: TimerConfig): boolean => {
+  const durations = [config.workDuration, config.shortBreakDuration, config.longBreakDuration];
+  return durations.every((d) => typeof d === 'number' && Number.isFinite(d) && d > 0);
+};
+
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
   const ALARM_BADGE_REFRESH = 'badge-refresh';
@@ -185,6 +196,10 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
+        if (!isValidConfig(message.config)) {
+          return state;
+        }
+
         await setConfig(message.config);
         const nextState = adjustDuration(state, message.config);
         await setTimerState(nextState);

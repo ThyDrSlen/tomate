@@ -22,10 +22,19 @@ export default function App() {
   });
 
   const handleSave = async () => {
+    // Clamp durations to at least 1 minute to prevent zero/negative values (#237)
+    const safeWork = Math.max(1, Math.round(work()));
+    const safeShort = Math.max(1, Math.round(shortBreak()));
+    const safeLong = Math.max(1, Math.round(longBreak()));
+
+    setWork(safeWork);
+    setShortBreak(safeShort);
+    setLongBreak(safeLong);
+
     const config: TimerConfig = {
-      workDuration: work() * MS_PER_MINUTE,
-      shortBreakDuration: shortBreak() * MS_PER_MINUTE,
-      longBreakDuration: longBreak() * MS_PER_MINUTE,
+      workDuration: safeWork * MS_PER_MINUTE,
+      shortBreakDuration: safeShort * MS_PER_MINUTE,
+      longBreakDuration: safeLong * MS_PER_MINUTE,
       openBreakTab: openBreakTab(),
     };
     await setConfig(config);
