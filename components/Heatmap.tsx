@@ -196,6 +196,8 @@ export default function Heatmap(props: HeatmapProps) {
                         "background-color": getIntensityColor(cell.count),
                       }}
                       title={tooltipText(cell)}
+                      aria-label={tooltipText(cell)}
+                      tabIndex={-1}
                     />
                   ) : (
                     <div
@@ -203,6 +205,7 @@ export default function Heatmap(props: HeatmapProps) {
                         width: `${cellSize()}px`,
                         height: `${cellSize()}px`,
                       }}
+                      aria-hidden="true"
                     />
                   )
                 }
