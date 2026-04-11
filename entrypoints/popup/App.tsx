@@ -118,7 +118,7 @@ export default function App() {
       <TimerRing progress={progress()} phase={state().phase} />
       <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
-      <div class="text-sm text-gray-500 mt-1">
+      <div class="text-sm text-gray-500 mt-1" role="status" aria-live="polite">
         <Switch>
           <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
           <Match when={state().phase === 'WORKING'}>Working</Match>

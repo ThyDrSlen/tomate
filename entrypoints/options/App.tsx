@@ -2,15 +2,17 @@ import { createSignal, onMount, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { getConfig, setConfig } from '@/lib/storage';
-import { DEFAULT_CONFIG, type TimerConfig } from '@/lib/types';
+import { DEFAULT_CONFIG, type TimerConfig, type TimerState } from '@/lib/types';
 
 const MS_PER_MINUTE = 60_000;
+const ACTIVE_PHASES = new Set(['WORKING', 'SHORT_BREAK', 'LONG_BREAK']);
 
 export default function App() {
   const [work, setWork] = createSignal(25);
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
   const [saved, setSaved] = createSignal(false);
+  const [timerActive, setTimerActive] = createSignal(false);
 
   onMount(async () => {
     const config = await getConfig();
@@ -26,9 +28,11 @@ export default function App() {
       longBreakDuration: longBreak() * MS_PER_MINUTE,
     };
     await setConfig(config);
+    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' }) as TimerState;
+    setTimerActive(ACTIVE_PHASES.has(currentState.phase));
     await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setTimeout(() => setSaved(false), 3000);
   };
 
   const handleReset = () => {
@@ -98,7 +102,12 @@ export default function App() {
           </button>
 
           <Show when={saved()}>
-            <span class="text-sm text-green-600">Settings saved ✓</span>
+            <span class="text-sm text-green-600">
+              Settings saved ✓
+              <Show when={timerActive()}>
+                {' '}— Duration changes apply to your next session
+              </Show>
+            </span>
           </Show>
         </div>
       </div>
