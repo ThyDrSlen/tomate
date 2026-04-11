@@ -8,6 +8,7 @@ import {
   getPendingCelebration,
   getSessionHistory,
   getTimerState,
+  setBlockedSites,
   setCurrentLabel,
   setTimerState,
 } from '@/lib/storage';
@@ -37,14 +38,24 @@ const initBackground = async (): Promise<void> => {
   await background.default.main?.();
 };
 
+const mockDnr = {
+  getDynamicRules: vi.fn().mockResolvedValue([]),
+  updateDynamicRules: vi.fn().mockResolvedValue(undefined),
+};
+
 describe('background service worker', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
+    vi.clearAllMocks();
     fakeBrowser.reset();
     await fakeBrowser.storage.local.clear();
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+
+    mockDnr.getDynamicRules.mockResolvedValue([]);
+    mockDnr.updateDynamicRules.mockResolvedValue(undefined);
+    (fakeBrowser as typeof fakeBrowser & { declarativeNetRequest: typeof mockDnr }).declarativeNetRequest = mockDnr;
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
@@ -269,5 +280,100 @@ describe('background service worker', () => {
         scheduledTime: 25_000,
       }),
     );
+  });
+
+  describe('website blocking', () => {
+    it('applies blocking rules when blockedSites changes during WORKING phase', async () => {
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 2_000,
+          duration: 1_000,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.storage.onChanged.trigger(
+        { blockedSites: { newValue: ['reddit.com', 'twitter.com'] } },
+        'local',
+      );
+
+      expect(mockDnr.updateDynamicRules).toHaveBeenCalledWith(
+        expect.objectContaining({
+          addRules: expect.arrayContaining([
+            expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'reddit.com' }) }),
+            expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'twitter.com' }) }),
+          ]),
+        }),
+      );
+    });
+
+    it('clears blocking rules when blockedSites changes during a non-WORKING phase', async () => {
+      await setTimerState(createState({ phase: 'SHORT_BREAK', startTime: 1_000, endTime: 2_000, duration: 1_000 }));
+      mockDnr.getDynamicRules.mockResolvedValue([{ id: 1000 }]);
+      await initBackground();
+
+      await fakeBrowser.storage.onChanged.trigger(
+        { blockedSites: { newValue: ['reddit.com'] } },
+        'local',
+      );
+
+      expect(mockDnr.updateDynamicRules).toHaveBeenCalledWith({ removeRuleIds: [1000], addRules: [] });
+    });
+
+    it('applies blocking rules when phase transitions to WORKING', async () => {
+      await setBlockedSites(['reddit.com']);
+      await setTimerState(createState({ phase: 'IDLE' }));
+      await initBackground();
+
+      await fakeBrowser.storage.onChanged.trigger(
+        {
+          timerState: {
+            oldValue: createState({ phase: 'IDLE' }),
+            newValue: createState({ phase: 'WORKING', startTime: 1_000, endTime: 2_000, duration: 1_000 }),
+          },
+        },
+        'local',
+      );
+
+      expect(mockDnr.updateDynamicRules).toHaveBeenCalledWith(
+        expect.objectContaining({
+          addRules: expect.arrayContaining([
+            expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'reddit.com' }) }),
+          ]),
+        }),
+      );
+    });
+
+    it('clears blocking rules when phase transitions away from WORKING', async () => {
+      await setBlockedSites(['reddit.com']);
+      await setTimerState(createState({ phase: 'SHORT_BREAK', startTime: 1_000, endTime: 2_000, duration: 1_000 }));
+      mockDnr.getDynamicRules.mockResolvedValue([{ id: 1000 }]);
+      await initBackground();
+
+      await fakeBrowser.storage.onChanged.trigger(
+        {
+          timerState: {
+            oldValue: createState({ phase: 'WORKING', startTime: 1_000, endTime: 2_000, duration: 1_000 }),
+            newValue: createState({ phase: 'SHORT_BREAK', startTime: 2_000, endTime: 3_000, duration: 1_000 }),
+          },
+        },
+        'local',
+      );
+
+      expect(mockDnr.updateDynamicRules).toHaveBeenCalledWith({ removeRuleIds: [1000], addRules: [] });
+    });
+
+    it('ignores storage changes for unrelated keys', async () => {
+      await initBackground();
+
+      await fakeBrowser.storage.onChanged.trigger(
+        { config: { newValue: DEFAULT_CONFIG } },
+        'local',
+      );
+
+      expect(mockDnr.updateDynamicRules).not.toHaveBeenCalled();
+    });
   });
 });
