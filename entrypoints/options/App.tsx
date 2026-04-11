@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { getConfig, setConfig } from '@/lib/storage';
@@ -12,6 +12,9 @@ export default function App() {
   const [longBreak, setLongBreak] = createSignal(30);
   const [openBreakTab, setOpenBreakTab] = createSignal(true);
   const [saved, setSaved] = createSignal(false);
+  let savedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  onCleanup(() => clearTimeout(savedTimer));
 
   onMount(async () => {
     const config = await getConfig();
@@ -40,7 +43,8 @@ export default function App() {
     await setConfig(config);
     await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => setSaved(false), 2000);
   };
 
   const handleReset = () => {
