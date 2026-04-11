@@ -5,7 +5,7 @@ export default defineConfig({
   manifest: {
     name: 'Tomate',
     description: 'A Pomodoro timer that helps you focus — one tomate at a time.',
-    permissions: ['alarms', 'notifications', 'storage'],
+    permissions: ['alarms', 'notifications', 'storage', 'tabs'],
     action: {
       default_icon: {
         '16': '/icons/icon-16.png',
