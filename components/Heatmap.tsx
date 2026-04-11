@@ -133,10 +133,11 @@ export default function Heatmap(props: HeatmapProps) {
       <div class="flex" style={{ "padding-left": `${labelWidth}px` }}>
         <For each={monthLabels()}>
           {(ml, i) => {
+            const labelsSnapshot = monthLabels();
+            const colCount = columns().length;
             const nextCol = () => {
-              const labels = monthLabels();
               const idx = i();
-              return idx < labels.length - 1 ? labels[idx + 1].column : columns().length;
+              return idx < labelsSnapshot.length - 1 ? labelsSnapshot[idx + 1].column : colCount;
             };
             const width = () => (nextCol() - ml.column) * (cellSize() + gap);
             return (
