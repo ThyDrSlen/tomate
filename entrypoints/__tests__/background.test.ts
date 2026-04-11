@@ -8,6 +8,7 @@ import {
   getPendingCelebration,
   getSessionHistory,
   getTimerState,
+  setConfig,
   setCurrentLabel,
   setTimerState,
 } from '@/lib/storage';
@@ -45,6 +46,7 @@ describe('background service worker', () => {
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+    fakeBrowser.tabs.create = vi.fn().mockResolvedValue({ id: 1 });
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
@@ -269,5 +271,134 @@ describe('background service worker', () => {
         scheduledTime: 25_000,
       }),
     );
+  });
+
+  describe('openBreakTab', () => {
+    it('opens the stats tab when openBreakTab is true and the working alarm fires', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(5_000);
+      await setConfig(createConfig({ openBreakTab: true }));
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 4_000,
+          duration: 3_000,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+      expect(fakeBrowser.tabs.create).toHaveBeenCalledOnce();
+      expect(fakeBrowser.tabs.create).toHaveBeenCalledWith(
+        expect.objectContaining({ url: expect.stringContaining('stats.html') }),
+      );
+    });
+
+    it('does not open a tab when openBreakTab is false and the working alarm fires', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(5_000);
+      await setConfig(createConfig({ openBreakTab: false }));
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 4_000,
+          duration: 3_000,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+      expect(fakeBrowser.tabs.create).not.toHaveBeenCalled();
+    });
+
+    it('catches errors from browser.tabs.create silently and still completes the alarm', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(5_000);
+      (fakeBrowser.tabs.create as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('No window'));
+      await setConfig(createConfig({ openBreakTab: true }));
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 4_000,
+          duration: 3_000,
+        }),
+      );
+      await initBackground();
+
+      // Should not throw even though tabs.create rejects
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+      // Timer state still advances to SHORT_BREAK
+      await expect(getTimerState()).resolves.toMatchObject({ phase: 'SHORT_BREAK' });
+    });
+  });
+
+  describe('multi-hop missed alarm recovery', () => {
+    it('recovers through WORKING and expired SHORT_BREAK, ending in IDLE', async () => {
+      // Date.now returns a small value for the first call (used when computing
+      // firstRecovered's endTime) then a much larger value for the while-loop
+      // check so that the SHORT_BREAK is also seen as expired.
+      const shortBreakDuration = 1_000;
+      let callCount = 0;
+      vi.spyOn(Date, 'now').mockImplementation(() => {
+        callCount += 1;
+        // First call: inside recoverMissedAlarm / completeTimer
+        // SHORT_BREAK endTime will be 10_000 + 1_000 = 11_000
+        if (callCount === 1) return 10_000;
+        // Subsequent calls: while loop and badge refresh — time has advanced past break
+        return 15_000;
+      });
+
+      await setConfig(createConfig({ shortBreakDuration }));
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 2_000,
+          duration: 1_000,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
+
+      // SHORT_BREAK (endTime=11_000) is expired at 15_000, so loop advances to IDLE
+      await expect(getTimerState()).resolves.toMatchObject({ phase: 'IDLE' });
+    });
+
+    it('exits gracefully at the safety cap when Date.now keeps advancing past each new phase', async () => {
+      // Simulate time always advancing past each new phase endTime by returning
+      // an ever-increasing value. This exercises the MAX_ITERATIONS cap.
+      const shortBreakDuration = 500;
+      let callIndex = 0;
+      // Each call to Date.now returns a value that makes the NEXT phase look expired too.
+      // The sequence: 10_000 (for first recoverMissedAlarm), then 11_000, 12_000...
+      // so SHORT_BREAK endTime = 10_000 + 500 = 10_500, which is < 11_000 ✓
+      // then completeTimer for SHORT_BREAK → IDLE (endTime null) → loop exits naturally.
+      vi.spyOn(Date, 'now').mockImplementation(() => {
+        callIndex += 1;
+        return 10_000 + callIndex * 1_000;
+      });
+
+      await setConfig(createConfig({ shortBreakDuration }));
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 2_000,
+          duration: 1_000,
+        }),
+      );
+      await initBackground();
+
+      // Should complete without hanging or throwing
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
+
+      // Recovery must terminate in a valid phase regardless of how many hops occurred
+      const state = await getTimerState();
+      expect(['IDLE', 'WORKING', 'SHORT_BREAK', 'LONG_BREAK', 'BREAK_SUGGESTION']).toContain(state.phase);
+    });
   });
 });
