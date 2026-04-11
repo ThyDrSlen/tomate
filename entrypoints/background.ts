@@ -114,8 +114,26 @@ export default defineBackground(() => {
     await setPendingCelebration(true);
   };
 
+  // Fix #8: guard so onInstalled + onStartup cannot both trigger recovery
+  let recoveryDone = false;
+
   const recoverFromMissedAlarm = async (): Promise<void> => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    if (recoveryDone) return;
+    recoveryDone = true;
+
+    const [storedState, config] = await Promise.all([getTimerState(), getConfig()]);
+
+    // Fix #6: reset completedToday when the stored date is from a previous calendar day
+    const todayKey = toDateKey(Date.now());
+    const state =
+      storedState.completedTodayDate !== todayKey
+        ? { ...storedState, completedToday: 0, completedTodayDate: todayKey }
+        : storedState;
+
+    if (state !== storedState) {
+      await setTimerState(state);
+    }
+
     const recovered = recoverMissedAlarm(state, config);
 
     if (!recovered) {
@@ -213,7 +231,13 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+  // Fix #7: return true synchronously so Chrome keeps the message channel open for the async response
+  browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    handleMessage(message as MessageAction)
+      .then(sendResponse)
+      .catch((err: unknown) => sendResponse({ error: err instanceof Error ? err.message : String(err) }));
+    return true;
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
@@ -227,7 +251,9 @@ export default defineBackground(() => {
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
-    await setTimerState(completed);
+    // Keep completedTodayDate in sync so midnight reset works correctly
+    const completedWithDate = { ...completed, completedTodayDate: toDateKey(Date.now()) };
+    await setTimerState(completedWithDate);
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
@@ -235,7 +261,7 @@ export default defineBackground(() => {
         type: 'basic',
         iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
         title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+        message: `Time for a break. You've done ${completedWithDate.completedToday} tomate(s) today.`,
       });
     }
 
@@ -248,8 +274,8 @@ export default defineBackground(() => {
       });
     }
 
-    if (isActivePhase(completed.phase) && completed.endTime !== null) {
-      await scheduleTimerAlarm(completed.endTime);
+    if (isActivePhase(completedWithDate.phase) && completedWithDate.endTime !== null) {
+      await scheduleTimerAlarm(completedWithDate.endTime);
       await startBadgeRefresh();
     } else {
       await clearActiveAlarms();

@@ -14,6 +14,8 @@ export type TimerState = {
   sessionCount: number;
   cyclePosition: number;
   completedToday: number;
+  /** ISO date key (YYYY-MM-DD) for the day completedToday was last updated; used to reset the counter at midnight */
+  completedTodayDate?: string;
 };
 
 export type CompletedSession = {
