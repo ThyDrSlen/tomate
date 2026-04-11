@@ -1,5 +1,6 @@
 import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
 import { browser } from 'wxt/browser';
+import type { Browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
@@ -31,6 +32,10 @@ export default function App() {
     setHeatmapData(await getHeatmapData(120));
   };
 
+  const onStorageChanged = (_changes: Record<string, Browser.storage.StorageChange>) => {
+    void refreshStats();
+  };
+
   onMount(async () => {
     const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
     setState(currentState as TimerState);
@@ -44,8 +49,8 @@ export default function App() {
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    browser.storage.onChanged.addListener(onStorageChanged);
+    onCleanup(() => browser.storage.onChanged.removeListener(onStorageChanged));
   });
 
   createEffect(() => {
