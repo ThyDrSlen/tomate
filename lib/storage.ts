@@ -103,3 +103,10 @@ export const getCurrentLabel = async (): Promise<string> =>
 export const setCurrentLabel = async (label: string): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CURRENT_LABEL]: label.slice(0, MAX_LABEL_LENGTH) });
 };
+
+export const getBlockedSites = async (): Promise<string[]> =>
+  (await getStoredValue<string[]>('blockedSites')) ?? [];
+
+export const setBlockedSites = async (sites: string[]): Promise<void> => {
+  await browser.storage.local.set({ blockedSites: sites });
+};

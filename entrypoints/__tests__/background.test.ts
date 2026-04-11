@@ -8,6 +8,7 @@ import {
   getPendingCelebration,
   getSessionHistory,
   getTimerState,
+  setBlockedSites,
   setCurrentLabel,
   setTimerState,
 } from '@/lib/storage';
@@ -45,6 +46,15 @@ describe('background service worker', () => {
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+
+    // Provide a default chrome.declarativeNetRequest stub so any test that
+    // triggers applyBlockingRules() doesn't throw "chrome is not defined".
+    (globalThis as typeof globalThis & { chrome: unknown }).chrome = {
+      declarativeNetRequest: {
+        getDynamicRules: vi.fn().mockResolvedValue([]),
+        updateDynamicRules: vi.fn().mockResolvedValue(undefined),
+      },
+    };
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
@@ -238,6 +248,93 @@ describe('background service worker', () => {
     await initBackground();
 
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
+  });
+
+  it('applyBlockingRules builds correct DNR rules for a single site', async () => {
+    const globalChrome = (globalThis as typeof globalThis & { chrome: { declarativeNetRequest: { getDynamicRules: ReturnType<typeof vi.fn>; updateDynamicRules: ReturnType<typeof vi.fn> } } }).chrome;
+
+    // Put the timer in WORKING state so ABANDON_TIMER triggers applyBlockingRules([])
+    // then manually call via the exported function — we verify the rule shape via the chrome mock
+    await setTimerState(
+      createState({ phase: 'WORKING', startTime: 1_000, endTime: 60_001_000, duration: 60_000_000 }),
+    );
+    await initBackground();
+
+    // Call the exported applyBlockingRules directly by loading a fresh module instance
+    const bg = (await import(`../background?dnrTest=${Math.random()}`)) as {
+      applyBlockingRules?: (sites: string[]) => Promise<void>;
+    };
+
+    if (bg.applyBlockingRules) {
+      await bg.applyBlockingRules(['example.com']);
+    }
+
+    expect(globalChrome.declarativeNetRequest.updateDynamicRules).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addRules: [
+          expect.objectContaining({
+            id: 1,
+            priority: 1,
+            action: { type: 'block' },
+            condition: expect.objectContaining({ urlFilter: 'example.com', resourceTypes: ['main_frame'] }),
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('blockedSites storage listener applies rules only when phase is WORKING', async () => {
+    const updateDynamicRules = (
+      (globalThis as typeof globalThis & { chrome: { declarativeNetRequest: { updateDynamicRules: ReturnType<typeof vi.fn> } } }).chrome
+    ).declarativeNetRequest.updateDynamicRules;
+
+    await setTimerState(
+      createState({ phase: 'WORKING', startTime: 1_000, endTime: 60_001_000, duration: 60_000_000 }),
+    );
+    await initBackground();
+
+    // Writing blockedSites to storage fires the onChanged listener automatically
+    await setBlockedSites(['reddit.com']);
+
+    // Allow microtasks (the listener uses .then()) to settle
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(updateDynamicRules).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addRules: [expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'reddit.com' }) })],
+      }),
+    );
+  });
+
+  it('blockedSites storage listener skips rule update when phase is not WORKING', async () => {
+    const updateDynamicRules = (
+      (globalThis as typeof globalThis & { chrome: { declarativeNetRequest: { updateDynamicRules: ReturnType<typeof vi.fn> } } }).chrome
+    ).declarativeNetRequest.updateDynamicRules;
+
+    await setTimerState(createState({ phase: 'IDLE' }));
+    await initBackground();
+
+    await setBlockedSites(['reddit.com']);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(updateDynamicRules).not.toHaveBeenCalled();
+  });
+
+  it('blockedSites storage listener ignores changes to other storage keys', async () => {
+    const updateDynamicRules = (
+      (globalThis as typeof globalThis & { chrome: { declarativeNetRequest: { updateDynamicRules: ReturnType<typeof vi.fn> } } }).chrome
+    ).declarativeNetRequest.updateDynamicRules;
+
+    await setTimerState(
+      createState({ phase: 'WORKING', startTime: 1_000, endTime: 60_001_000, duration: 60_000_000 }),
+    );
+    await initBackground();
+
+    // Trigger a change to a different key
+    await fakeBrowser.storage.onChanged.trigger({ someOtherKey: { newValue: 'foo' } }, 'local');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(updateDynamicRules).not.toHaveBeenCalled();
   });
 
   it('updates config during an active timer and recreates the timer alarm', async () => {
