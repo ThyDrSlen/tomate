@@ -12,6 +12,7 @@ const KEYS = {
   TIMER_STATE: 'timerState',
   CONFIG: 'config',
   SESSIONS: 'sessions',
+  SESSION_COUNTS: 'sessionCounts',
   PENDING_CELEBRATION: 'pendingCelebration',
   CURRENT_LABEL: 'currentLabel',
 } as const;
@@ -24,9 +25,13 @@ const startOfLocalDay = (timestamp: number): Date => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
-const getStoredValue = async <T>(key: string): Promise<T | undefined> => {
+const getStoredValue = async <T>(key: string, defaultValue?: T): Promise<T | undefined> => {
   const result = await browser.storage.local.get(key);
-  return result[key] as T | undefined;
+  const value = result[key] as T | undefined;
+  if (value === undefined && defaultValue !== undefined) {
+    return defaultValue;
+  }
+  return value;
 };
 
 export const toDateKey = (timestamp: number): string => {
@@ -55,6 +60,11 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
   await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+
+  const dateKey = toDateKey(Date.now());
+  const counts = (await getStoredValue<Record<string, number>>(KEYS.SESSION_COUNTS, {})) ?? {};
+  counts[dateKey] = (counts[dateKey] ?? 0) + 1;
+  await browser.storage.local.set({ [KEYS.SESSION_COUNTS]: counts });
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
@@ -75,19 +85,20 @@ export const getSessionHistory = async (days?: number): Promise<CompletedSession
 };
 
 export const getHeatmapData = async (days: number): Promise<Record<string, number>> => {
-  const sessions = await getSessionHistory(days);
+  if (days <= 0) {
+    return {};
+  }
 
-  return sessions.reduce<Record<string, number>>((acc, session) => {
-    acc[session.date] = (acc[session.date] ?? 0) + 1;
-    return acc;
-  }, {});
+  const counts = (await getStoredValue<Record<string, number>>(KEYS.SESSION_COUNTS, {})) ?? {};
+  const today = startOfLocalDay(Date.now()).getTime();
+  const earliestKey = toDateKey(today - (days - 1) * DAY_MS);
+
+  return Object.fromEntries(Object.entries(counts).filter(([date]) => date >= earliestKey));
 };
 
 export const getTodayCount = async (): Promise<number> => {
-  const todayKey = toDateKey(Date.now());
-  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-
-  return sessions.filter((session) => session.date === todayKey).length;
+  const counts = (await getStoredValue<Record<string, number>>(KEYS.SESSION_COUNTS, {})) ?? {};
+  return counts[toDateKey(Date.now())] ?? 0;
 };
 
 export const getPendingCelebration = async (): Promise<boolean> =>
