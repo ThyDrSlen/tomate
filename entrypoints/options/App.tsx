@@ -1,10 +1,12 @@
-import { createSignal, onMount, Show } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { getConfig, setConfig } from '@/lib/storage';
 import { DEFAULT_CONFIG, type TimerConfig } from '@/lib/types';
 
 const MS_PER_MINUTE = 60_000;
+
+let savedTimer: ReturnType<typeof setTimeout> | undefined;
 
 export default function App() {
   const [work, setWork] = createSignal(25);
@@ -19,6 +21,10 @@ export default function App() {
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
   });
 
+  onCleanup(() => {
+    clearTimeout(savedTimer);
+  });
+
   const handleSave = async () => {
     const config: TimerConfig = {
       workDuration: work() * MS_PER_MINUTE,
@@ -28,7 +34,8 @@ export default function App() {
     await setConfig(config);
     await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => setSaved(false), 2000);
   };
 
   const handleReset = () => {
