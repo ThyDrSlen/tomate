@@ -149,4 +149,91 @@ describe('storage helpers', () => {
     await setPendingCelebration(false);
     await expect(getPendingCelebration()).resolves.toBe(false);
   });
+
+  // #178 — getConfig() v1→v2 schema migration
+  it('applies v2 defaults when stored config is missing new fields (v1 migration)', async () => {
+    // Simulate a v1 config stored before dailyGoal and openBreakTab existed
+    const v1Config = {
+      workDuration: 30 * 60 * 1000,
+      shortBreakDuration: 10 * 60 * 1000,
+      longBreakDuration: 20 * 60 * 1000,
+    };
+
+    await fakeBrowser.storage.local.set({ config: v1Config });
+
+    const result = await getConfig();
+
+    // v1 values must be preserved
+    expect(result.workDuration).toBe(30 * 60 * 1000);
+    expect(result.shortBreakDuration).toBe(10 * 60 * 1000);
+    expect(result.longBreakDuration).toBe(20 * 60 * 1000);
+
+    // v2 fields must be filled in with their defaults
+    expect(result.dailyGoal).toBe(DEFAULT_CONFIG.dailyGoal);
+    expect(result.openBreakTab).toBe(DEFAULT_CONFIG.openBreakTab);
+  });
+
+  it('preserves explicitly stored v2 fields and does not overwrite them with defaults', async () => {
+    const v2Config = {
+      workDuration: 25 * 60 * 1000,
+      shortBreakDuration: 5 * 60 * 1000,
+      longBreakDuration: 30 * 60 * 1000,
+      dailyGoal: 4,
+      openBreakTab: false,
+    };
+
+    await fakeBrowser.storage.local.set({ config: v2Config });
+
+    const result = await getConfig();
+
+    expect(result.dailyGoal).toBe(4);
+    expect(result.openBreakTab).toBe(false);
+  });
+
+  // #180 — addCompletedSession() quota-exceeded auto-prune and retry
+  it('prunes the oldest 10 sessions and retries when storage throws QuotaExceededError', async () => {
+    // Pre-populate 15 sessions so there is history to prune
+    const existingSessions = Array.from({ length: 15 }, (_, i) =>
+      createSession(new Date(2026, 2, 1, 9, i, 0).getTime(), { id: `old-${i}` }),
+    );
+    await fakeBrowser.storage.local.set({ sessions: existingSessions });
+
+    const newSession = createSession(new Date(2026, 2, 20, 9, 0, 0).getTime(), {
+      id: 'new-session',
+    });
+
+    const quotaError = Object.assign(new Error('QuotaExceeded'), { name: 'QuotaExceededError' });
+
+    // First call throws; subsequent calls succeed (fakeBrowser default behaviour)
+    const originalSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
+    let callCount = 0;
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+      if (callCount === 0) {
+        callCount++;
+        throw quotaError;
+      }
+      return originalSet(items);
+    });
+
+    await addCompletedSession(newSession);
+
+    const stored = (await fakeBrowser.storage.local.get('sessions')) as {
+      sessions: CompletedSession[];
+    };
+    const saved = stored.sessions;
+
+    // The first 10 of the 15 original sessions must have been pruned
+    const survivingOld = existingSessions.slice(10);
+    expect(saved).toEqual([...survivingOld, newSession]);
+    expect(saved).toHaveLength(6); // 15 - 10 pruned + 1 new
+  });
+
+  it('re-throws non-quota errors from storage.set', async () => {
+    const genericError = new Error('disk failure');
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockRejectedValue(genericError);
+
+    const session = createSession(new Date(2026, 2, 20, 9, 0, 0).getTime());
+
+    await expect(addCompletedSession(session)).rejects.toThrow('disk failure');
+  });
 });

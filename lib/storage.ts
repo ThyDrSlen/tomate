@@ -45,16 +45,36 @@ export const setTimerState = async (state: TimerState): Promise<void> => {
   await browser.storage.local.set({ [KEYS.TIMER_STATE]: state });
 };
 
-export const getConfig = async (): Promise<TimerConfig> =>
-  (await getStoredValue<TimerConfig>(KEYS.CONFIG)) ?? DEFAULT_CONFIG;
+const migrateConfig = (raw: Partial<TimerConfig>): TimerConfig => ({
+  ...DEFAULT_CONFIG,
+  ...raw,
+});
+
+export const getConfig = async (): Promise<TimerConfig> => {
+  const stored = await getStoredValue<Partial<TimerConfig>>(KEYS.CONFIG);
+  if (!stored) return DEFAULT_CONFIG;
+  return migrateConfig(stored);
+};
 
 export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
 };
 
+const QUOTA_EXCEEDED_ERROR = 'QuotaExceededError';
+const PRUNE_COUNT = 10;
+
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  try {
+    await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  } catch (err) {
+    if (err instanceof Error && err.name === QUOTA_EXCEEDED_ERROR) {
+      const pruned = sessions.slice(PRUNE_COUNT);
+      await browser.storage.local.set({ [KEYS.SESSIONS]: [...pruned, session] });
+    } else {
+      throw err;
+    }
+  }
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
