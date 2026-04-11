@@ -102,7 +102,7 @@ export default function App() {
   };
 
   return (
-    <div class="w-[360px] min-h-[400px] bg-red-50 p-4 flex flex-col items-center">
+    <div class="w-[360px] min-h-[400px] bg-red-50 p-4 flex flex-col items-center transition-colors duration-300">
       <div class="w-full flex justify-between items-center mb-4">
         <h1 class="text-xl font-bold text-red-600">Tomate</h1>
         <button
@@ -118,7 +118,7 @@ export default function App() {
       <TimerRing progress={progress()} phase={state().phase} />
       <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
-      <div class="text-sm text-gray-500 mt-1">
+      <div class="text-sm text-gray-500 mt-1 transition-opacity duration-200 ease-in-out">
         <Switch>
           <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
           <Match when={state().phase === 'WORKING'}>Working</Match>
