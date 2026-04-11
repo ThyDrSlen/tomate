@@ -3,6 +3,7 @@ import type { TimerPhase } from '@/lib/types';
 type TimerRingProps = {
   progress: number;
   phase: TimerPhase;
+  remainingLabel?: string;
 };
 
 const PHASE_COLORS: Record<TimerPhase, string> = {
@@ -18,13 +19,28 @@ const STROKE = 8;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
+const PHASE_LABELS: Record<TimerPhase, string> = {
+  IDLE: 'Timer idle',
+  WORKING: 'Working',
+  SHORT_BREAK: 'Short break',
+  LONG_BREAK: 'Long break',
+  BREAK_SUGGESTION: 'Break suggested',
+};
+
 export default function TimerRing(props: TimerRingProps) {
   const offset = () => CIRCUMFERENCE * (1 - props.progress);
   const color = () => PHASE_COLORS[props.phase];
+  const title = () => {
+    const label = PHASE_LABELS[props.phase];
+    if (props.remainingLabel && props.phase !== 'IDLE' && props.phase !== 'BREAK_SUGGESTION') {
+      return `${label} \u2014 ${props.remainingLabel} remaining`;
+    }
+    return label;
+  };
 
   return (
     <svg width={SIZE} height={SIZE} class="timer-ring" viewBox={`0 0 ${SIZE} ${SIZE}`}>
-      <title>Timer progress</title>
+      <title>{title()}</title>
       <circle
         cx={SIZE / 2}
         cy={SIZE / 2}
