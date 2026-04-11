@@ -70,6 +70,12 @@ export default function App() {
           </Show>
         </div>
 
+        <Show when={sessions.error || yearData.error}>
+          <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm mb-4" role="alert">
+            Failed to load session data. Try reloading the page.
+          </div>
+        </Show>
+
         <Show when={(sessions() ?? []).length === 0}>
           <div class="text-center py-8 text-gray-500 dark:text-gray-400">
             <p class="text-lg">No sessions yet</p>
