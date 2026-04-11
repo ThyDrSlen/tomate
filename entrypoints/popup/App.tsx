@@ -32,8 +32,15 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    let currentState: TimerState;
+    try {
+      currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' }) as TimerState;
+    } catch (err) {
+      console.warn('[tomate] sendMessage failed (service worker cold start?), falling back to storage', err);
+      const { getTimerState } = await import('@/lib/storage');
+      currentState = await getTimerState();
+    }
+    setState(currentState);
 
     const pending = await getPendingCelebration();
     if (pending) {
