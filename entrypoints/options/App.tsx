@@ -11,6 +11,7 @@ export default function App() {
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
   const [saved, setSaved] = createSignal(false);
+  const [saveError, setSaveError] = createSignal(false);
 
   onMount(async () => {
     const config = await getConfig();
@@ -25,10 +26,15 @@ export default function App() {
       shortBreakDuration: shortBreak() * MS_PER_MINUTE,
       longBreakDuration: longBreak() * MS_PER_MINUTE,
     };
-    await setConfig(config);
-    await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await setConfig(config);
+      await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
+      setSaveError(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      setSaveError(true);
+    }
   };
 
   const handleReset = () => {
@@ -99,6 +105,10 @@ export default function App() {
 
           <Show when={saved()}>
             <span class="text-sm text-green-600">Settings saved ✓</span>
+          </Show>
+
+          <Show when={saveError()}>
+            <span class="text-sm text-red-600">Failed to save settings. Please try again.</span>
           </Show>
         </div>
       </div>
