@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -25,6 +25,7 @@ export default function App() {
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [reconnecting, setReconnecting] = createSignal(false);
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
@@ -32,8 +33,20 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    // Show "Reconnecting..." overlay if GET_STATE takes too long (service worker crash recovery)
+    const reconnectTimeout = setTimeout(() => setReconnecting(true), 800);
+
+    let currentState: TimerState;
+    try {
+      const response = await browser.runtime.sendMessage({ action: 'GET_STATE' });
+      currentState = response as TimerState;
+    } catch {
+      currentState = INITIAL_STATE;
+    } finally {
+      clearTimeout(reconnectTimeout);
+      setReconnecting(false);
+    }
+    setState(currentState);
 
     const pending = await getPendingCelebration();
     if (pending) {
@@ -101,8 +114,17 @@ export default function App() {
     labelTimeout = setTimeout(() => setCurrentLabel(value), 300);
   };
 
+  const heatmapIsEmpty = () => Object.values(heatmapData()).every((v) => v === 0);
+
   return (
-    <div class="w-[360px] min-h-[400px] bg-red-50 p-4 flex flex-col items-center">
+    <div class="relative w-[360px] min-h-[400px] bg-red-50 p-4 flex flex-col items-center">
+      {/* Reconnecting overlay — shown when service worker takes > 800 ms to respond */}
+      <Show when={reconnecting()}>
+        <div class="absolute inset-0 z-10 flex items-center justify-center bg-red-50/80 rounded">
+          <p class="text-sm text-gray-500 animate-pulse">Reconnecting to timer...</p>
+        </div>
+      </Show>
+
       <div class="w-full flex justify-between items-center mb-4">
         <h1 class="text-xl font-bold text-red-600">Tomate</h1>
         <button
@@ -141,7 +163,17 @@ export default function App() {
       <TodayCount count={todayCount()} />
 
       <div class="mt-2 w-full">
-        <Heatmap days={120} data={heatmapData()} />
+        <Show
+          when={!heatmapIsEmpty()}
+          fallback={
+            <p class="text-xs text-gray-400 text-center py-2">
+              Complete a session to see your activity here
+            </p>
+          }
+        >
+          <Heatmap days={120} data={heatmapData()} />
+          <p class="text-xs text-gray-400 text-center mt-1">Your 120-day activity</p>
+        </Show>
       </div>
 
       <button
