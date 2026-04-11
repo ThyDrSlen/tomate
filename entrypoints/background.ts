@@ -40,6 +40,11 @@ export default defineBackground(() => {
   const BADGE_GOLD = '#CA8A04';
   const badgeApi = browser.action;
 
+  // Mutex for alarm processing — serialises onAlarm executions and blocks
+  // concurrent START_TIMER messages from racing with an in-flight alarm handler.
+  let alarmQueue: Promise<void> = Promise.resolve();
+  let isProcessingAlarm = false;
+
   const refreshBadge = async (): Promise<void> => {
     const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
 
@@ -144,7 +149,20 @@ export default defineBackground(() => {
 
     switch (message.action) {
       case 'START_TIMER': {
-        const nextState = startTimer(state, config);
+        // If an alarm handler is currently persisting a completed session, wait
+        // for it to finish so we never race on storage writes or produce a
+        // duplicate session record.
+        const wasProcessingAlarm = isProcessingAlarm;
+        if (wasProcessingAlarm) {
+          await alarmQueue;
+        }
+
+        // Re-read state after waiting in case the alarm handler mutated it.
+        const [timerState, timerConfig] = wasProcessingAlarm
+          ? await Promise.all([getTimerState(), getConfig()])
+          : [state, config];
+
+        const nextState = startTimer(timerState, timerConfig);
         await setTimerState(nextState);
 
         if (nextState.endTime !== null) {
@@ -215,7 +233,7 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
 
-  browser.alarms.onAlarm.addListener(async (alarm) => {
+  const processAlarm = async (alarm: browser.Alarms.Alarm): Promise<void> => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
       await refreshBadge();
       return;
@@ -225,36 +243,50 @@ export default defineBackground(() => {
       return;
     }
 
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const completed = completeTimer(state, config);
-    await setTimerState(completed);
+    isProcessingAlarm = true;
+    try {
+      const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+      const completed = completeTimer(state, config);
+      await setTimerState(completed);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-      });
+      if (state.phase === 'WORKING') {
+        await persistCompletedSession(state, Date.now());
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: '🍅 Tomate Complete!',
+          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+        });
+      }
+
+      if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+        });
+      }
+
+      if (isActivePhase(completed.phase) && completed.endTime !== null) {
+        await scheduleTimerAlarm(completed.endTime);
+        await startBadgeRefresh();
+      } else {
+        await clearActiveAlarms();
+      }
+
+      await refreshBadge();
+    } finally {
+      isProcessingAlarm = false;
     }
+  };
 
-    if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-      });
-    }
-
-    if (isActivePhase(completed.phase) && completed.endTime !== null) {
-      await scheduleTimerAlarm(completed.endTime);
-      await startBadgeRefresh();
-    } else {
-      await clearActiveAlarms();
-    }
-
-    await refreshBadge();
+  browser.alarms.onAlarm.addListener((alarm) => {
+    // Chain onto the queue so rapid back-to-back alarms are serialised and
+    // isProcessingAlarm accurately reflects whether work is in flight.
+    // Return the updated queue so the browser's listener harness (and tests
+    // using fakeBrowser.trigger) can await full completion.
+    alarmQueue = alarmQueue.then(() => processAlarm(alarm));
+    return alarmQueue;
   });
 });
