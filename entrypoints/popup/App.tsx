@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -19,12 +19,24 @@ import TaskLabel from '@/components/TaskLabel';
 import TodayCount from '@/components/TodayCount';
 import Heatmap from '@/components/Heatmap';
 
+const CYCLES_PER_ROUND = 4;
+
 export default function App() {
   const [state, setState] = createSignal<TimerState>(INITIAL_STATE);
   const [remaining, setRemaining] = createSignal(0);
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [showAbandonConfirm, setShowAbandonConfirm] = createSignal(false);
+  const [actionError, setActionError] = createSignal<string | null>(null);
+
+  let errorTimeout: ReturnType<typeof setTimeout>;
+
+  const showError = (msg: string) => {
+    setActionError(msg);
+    clearTimeout(errorTimeout);
+    errorTimeout = setTimeout(() => setActionError(null), 3000);
+  };
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
@@ -74,24 +86,37 @@ export default function App() {
     return 1 - remaining() / s.duration;
   };
 
+  const sendAction = async (action: string): Promise<TimerState | null> => {
+    try {
+      const newState = await browser.runtime.sendMessage({ action });
+      return newState as TimerState;
+    } catch {
+      showError('Failed to connect. Try again.');
+      return null;
+    }
+  };
+
   const startTimer = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'START_TIMER' });
-    setState(newState as TimerState);
+    const newState = await sendAction('START_TIMER');
+    if (newState) setState(newState);
   };
 
   const abandonTimer = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'ABANDON_TIMER' });
-    setState(newState as TimerState);
+    const newState = await sendAction('ABANDON_TIMER');
+    if (newState) {
+      setState(newState);
+      setShowAbandonConfirm(false);
+    }
   };
 
   const acceptLongBreak = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
-    setState(newState as TimerState);
+    const newState = await sendAction('ACCEPT_LONG_BREAK');
+    if (newState) setState(newState);
   };
 
   const skipLongBreak = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
-    setState(newState as TimerState);
+    const newState = await sendAction('SKIP_LONG_BREAK');
+    if (newState) setState(newState);
   };
 
   let labelTimeout: ReturnType<typeof setTimeout>;
@@ -99,6 +124,13 @@ export default function App() {
     setLabel(value);
     clearTimeout(labelTimeout);
     labelTimeout = setTimeout(() => setCurrentLabel(value), 300);
+  };
+
+  const cycleIndicator = () => {
+    const s = state();
+    if (s.phase === 'IDLE' || s.phase === 'BREAK_SUGGESTION') return null;
+    const pos = s.cyclePosition + 1;
+    return `${pos} / ${CYCLES_PER_ROUND}`;
   };
 
   return (
@@ -128,12 +160,44 @@ export default function App() {
         </Switch>
       </div>
 
+      <Show when={cycleIndicator() !== null}>
+        <div class="text-xs text-gray-400 mt-0.5">Session {cycleIndicator()}</div>
+      </Show>
+
+      <Show when={actionError() !== null}>
+        <div class="mt-2 px-3 py-1.5 bg-red-100 border border-red-300 text-red-700 text-xs rounded-md w-full text-center">
+          {actionError()}
+        </div>
+      </Show>
+
       <TaskLabel value={label()} onChange={handleLabelChange} />
+
+      <Show when={showAbandonConfirm()}>
+        <div class="mt-3 w-full bg-amber-50 border border-amber-300 rounded-lg p-3 flex flex-col items-center gap-2">
+          <p class="text-sm text-amber-800 font-medium">Abandon this session?</p>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              onClick={abandonTimer}
+              class="px-4 py-1.5 bg-red-600 text-white text-sm font-semibold rounded-md hover:bg-red-700 active:bg-red-800 transition-colors"
+            >
+              Yes, abandon
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAbandonConfirm(false)}
+              class="px-4 py-1.5 bg-gray-200 text-gray-700 text-sm font-semibold rounded-md hover:bg-gray-300 active:bg-gray-400 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Show>
 
       <Controls
         phase={state().phase}
         onStart={startTimer}
-        onAbandon={abandonTimer}
+        onAbandon={() => setShowAbandonConfirm(true)}
         onAcceptLongBreak={acceptLongBreak}
         onSkipLongBreak={skipLongBreak}
       />
