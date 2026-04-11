@@ -175,6 +175,8 @@ export default function Heatmap(props: HeatmapProps) {
 
         {/* Heatmap cells - CSS Grid: 7 rows, auto columns */}
         <div
+          role="grid"
+          aria-label="Activity heatmap"
           class="grid"
           style={{
             "grid-template-rows": `repeat(7, ${cellSize()}px)`,
@@ -189,16 +191,27 @@ export default function Heatmap(props: HeatmapProps) {
                 {(cell) =>
                   cell ? (
                     <div
-                      class="rounded-sm"
+                      role="gridcell"
+                      tabindex="0"
+                      class="rounded-sm focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-blue-500"
                       style={{
                         width: `${cellSize()}px`,
                         height: `${cellSize()}px`,
                         "background-color": getIntensityColor(cell.count),
                       }}
                       title={tooltipText(cell)}
+                      aria-label={tooltipText(cell)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLDivElement).focus();
+                        }
+                      }}
                     />
                   ) : (
                     <div
+                      role="gridcell"
+                      aria-hidden="true"
                       style={{
                         width: `${cellSize()}px`,
                         height: `${cellSize()}px`,
