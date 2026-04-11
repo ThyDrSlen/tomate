@@ -240,6 +240,59 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
+  it('attributes a cross-midnight session to the completion date, not the start date', async () => {
+    // Session started at 23:58 on 2026-03-19, completed at 00:03 on 2026-03-20
+    const startTime = new Date(2026, 2, 19, 23, 58, 0).getTime();
+    const endTime = new Date(2026, 2, 20, 0, 3, 0).getTime();
+    vi.spyOn(Date, 'now').mockReturnValue(endTime);
+
+    await setCurrentLabel('Late night session');
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime,
+        endTime: startTime + DEFAULT_CONFIG.workDuration,
+        duration: DEFAULT_CONFIG.workDuration,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({
+      name: 'tomate-timer',
+      scheduledTime: startTime + DEFAULT_CONFIG.workDuration,
+    });
+
+    const sessions = await getSessionHistory();
+    expect(sessions).toHaveLength(1);
+    // The session must be filed under the completion date (2026-03-20), not start date (2026-03-19)
+    expect(sessions[0].date).toBe('2026-03-20');
+    expect(sessions[0].startTime).toBe(startTime);
+    expect(sessions[0].endTime).toBe(endTime);
+  });
+
+  it('shows storage-derived today count in BREAK_SUGGESTION badge after midnight', async () => {
+    // Simulate: state has completedToday=5 from yesterday, but storage has 0 sessions today
+    // (the counter was never reset). refreshBadge should show 0, not 5.
+    const now = new Date(2026, 2, 20, 0, 5, 0).getTime();
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+
+    await setTimerState(
+      createState({
+        phase: 'BREAK_SUGGESTION',
+        completedToday: 5, // stale — from yesterday
+        sessionCount: 5,
+      }),
+    );
+    // No sessions stored for today (2026-03-20) — all were from yesterday
+    await initBackground();
+
+    // Trigger badge refresh
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: now });
+
+    // Badge should reflect 0 sessions today, not the stale completedToday=5
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: '0✓' });
+  });
+
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });
