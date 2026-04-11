@@ -22,10 +22,18 @@ const CONFETTI_CONFIGS: Record<string, confetti.Options> = {
   },
 };
 
-export const playCelebration = (type: 'work' | 'milestone' | 'break'): void => {
+/**
+ * Play visual confetti and optionally the completion sound.
+ * @param type   Celebration variant.
+ * @param sound  Whether to play the completion sound (respects user setting, #105).
+ *               Defaults to true for backwards compatibility.
+ */
+export const playCelebration = (type: 'work' | 'milestone' | 'break', sound = true): void => {
   confetti(CONFETTI_CONFIGS[type]);
 
-  try {
-    new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html')).play();
-  } catch {}
+  if (sound) {
+    try {
+      new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html')).play();
+    } catch {}
+  }
 };

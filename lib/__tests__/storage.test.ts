@@ -12,6 +12,7 @@ import {
   getSessionHistory,
   getTimerState,
   getTodayCount,
+  MAX_SESSIONS,
   setConfig,
   setCurrentLabel,
   setPendingCelebration,
@@ -148,5 +149,57 @@ describe('storage helpers', () => {
 
     await setPendingCelebration(false);
     await expect(getPendingCelebration()).resolves.toBe(false);
+  });
+
+  it('caps sessions at MAX_SESSIONS when adding beyond the limit (#175)', async () => {
+    // Pre-populate MAX_SESSIONS sessions
+    const sessions = Array.from({ length: MAX_SESSIONS }, (_, i) =>
+      createSession(i * 1000, { id: `s${i}` }),
+    );
+    await fakeBrowser.storage.local.set({ sessions });
+
+    // Adding one more should drop the oldest
+    const newest = createSession(MAX_SESSIONS * 1000, { id: 'newest' });
+    await addCompletedSession(newest);
+
+    const stored = await getSessionHistory();
+    expect(stored).toHaveLength(MAX_SESSIONS);
+    expect(stored[stored.length - 1].id).toBe('newest');
+    expect(stored[0].id).toBe('s1'); // s0 was pruned
+  });
+
+  it('on QuotaExceededError, prunes oldest 10% and retries with MAX_SESSIONS cap (#202)', async () => {
+    // Pre-populate with MAX_SESSIONS sessions
+    const sessions = Array.from({ length: MAX_SESSIONS }, (_, i) =>
+      createSession(i * 1000, { id: `s${i}` }),
+    );
+    await fakeBrowser.storage.local.set({ sessions });
+
+    // Make first set() call throw QuotaExceededError, second succeed normally
+    let callCount = 0;
+    const origSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+      callCount++;
+      if (callCount === 1) {
+        const err = new Error('QuotaExceededError');
+        err.name = 'QuotaExceededError';
+        throw err;
+      }
+      return origSet(items);
+    });
+
+    const newest = createSession(MAX_SESSIONS * 1000, { id: 'retry-session' });
+    await addCompletedSession(newest);
+
+    const stored = await getSessionHistory();
+    // After retry: pruned 10% of MAX_SESSIONS = 200, leaving 1800 + 1 new = 1801
+    expect(stored.length).toBeLessThanOrEqual(MAX_SESSIONS);
+    expect(stored[stored.length - 1].id).toBe('retry-session');
+  });
+
+  it('rethrows non-quota storage errors (#202)', async () => {
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockRejectedValue(new Error('disk failure'));
+    const session = createSession(Date.now(), { id: 'fail' });
+    await expect(addCompletedSession(session)).rejects.toThrow('disk failure');
   });
 });

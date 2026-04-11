@@ -4,6 +4,11 @@ type HeatmapProps = {
   data: Record<string, number>;
   days: number;
   cellSize?: number;
+  /**
+   * If provided, the heatmap starts from this date instead of rolling back
+   * `days` from today. Useful for calendar-year views (#199).
+   */
+  startDate?: Date;
 };
 
 type HeatmapCell = {
@@ -42,15 +47,40 @@ const toDateKey = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+const MIN_DISPLAY_DAYS = 12 * 7; // 12 weeks minimum so layout doesn't break with sparse data (#104)
+
 const generateHeatmapGrid = (
   data: Record<string, number>,
   days: number,
+  startDate?: Date,
 ): HeatmapCell[] => {
   const cells: HeatmapCell[] = [];
+
+  if (startDate) {
+    // Fixed-start mode: render exactly `days` days from startDate (#199)
+    const base = new Date(startDate);
+    base.setHours(0, 0, 0, 0);
+    for (let i = 0; i < days; i++) {
+      const date = new Date(base);
+      date.setDate(base.getDate() + i);
+      const key = toDateKey(date);
+      cells.push({
+        date: key,
+        count: data[key] ?? 0,
+        dayOfWeek: date.getDay(),
+      });
+    }
+    return cells;
+  }
+
+  // Rolling-window mode: default behaviour (back N days from today)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  for (let i = days - 1; i >= 0; i--) {
+  // Always render at least 12 weeks so month labels and grid columns stay sane
+  const effectiveDays = Math.max(days, MIN_DISPLAY_DAYS);
+
+  for (let i = effectiveDays - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     const key = toDateKey(date);
@@ -70,7 +100,7 @@ export default function Heatmap(props: HeatmapProps) {
   const cellSize = () => props.cellSize ?? 12;
   const gap = 2;
 
-  const grid = createMemo(() => generateHeatmapGrid(props.data, props.days));
+  const grid = createMemo(() => generateHeatmapGrid(props.data, props.days, props.startDate));
 
   const toMonRow = (jsDay: number) => (jsDay === 0 ? 6 : jsDay - 1);
 
