@@ -132,12 +132,36 @@ describe('storage helpers', () => {
     await expect(getTodayCount()).resolves.toBe(2);
   });
 
-  it('truncates labels to 50 characters before storing', async () => {
-    const label = 'x'.repeat(51);
+  describe('setCurrentLabel / getCurrentLabel', () => {
+    it('truncates a label longer than 50 chars to exactly 50', async () => {
+      const label = 'a'.repeat(100);
 
-    await setCurrentLabel(label);
+      await setCurrentLabel(label);
 
-    await expect(getCurrentLabel()).resolves.toBe('x'.repeat(50));
+      await expect(getCurrentLabel()).resolves.toBe('a'.repeat(50));
+    });
+
+    it('stores a label of exactly 50 chars unchanged', async () => {
+      const label = 'b'.repeat(50);
+
+      await setCurrentLabel(label);
+
+      await expect(getCurrentLabel()).resolves.toBe(label);
+    });
+
+    it('stores an empty string without modification', async () => {
+      await setCurrentLabel('');
+
+      await expect(getCurrentLabel()).resolves.toBe('');
+    });
+
+    it('truncates a label of 51 chars to 50 chars', async () => {
+      const label = 'x'.repeat(51);
+
+      await setCurrentLabel(label);
+
+      await expect(getCurrentLabel()).resolves.toBe('x'.repeat(50));
+    });
   });
 
   it('roundtrips the pending celebration flag', async () => {
