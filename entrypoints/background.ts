@@ -32,6 +32,22 @@ export type MessageAction =
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
 
+const MAX_DURATION_MS = 120 * 60_000; // 120 minutes
+
+function isValidConfig(config: unknown): config is TimerConfig {
+  if (!config || typeof config !== 'object') return false;
+  const c = config as Record<string, unknown>;
+  // Accept any positive finite duration up to 120 min; UI enforces 1-min floor separately
+  const isValidDuration = (v: unknown) =>
+    typeof v === 'number' && isFinite(v) && v > 0 && v <= MAX_DURATION_MS;
+  return (
+    isValidDuration(c.workDuration) &&
+    isValidDuration(c.shortBreakDuration) &&
+    isValidDuration(c.longBreakDuration) &&
+    typeof c.openBreakTab === 'boolean'
+  );
+}
+
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
   const ALARM_BADGE_REFRESH = 'badge-refresh';
@@ -185,6 +201,10 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
+        if (!isValidConfig(message.config)) {
+          console.warn('[tomate] UPDATE_CONFIG rejected: invalid config payload', message.config);
+          return state;
+        }
         await setConfig(message.config);
         const nextState = adjustDuration(state, message.config);
         await setTimerState(nextState);
@@ -205,15 +225,6 @@ export default defineBackground(() => {
     }
   };
 
-  // Async mutex: ensures onAlarm and handleMessage never interleave.
-  // Each operation is appended to the tail of the promise chain so that
-  // concurrent browser callbacks are serialized rather than overlapping.
-  let pendingOp: Promise<void> = Promise.resolve();
-  const withLock = (fn: () => Promise<void>): Promise<void> => {
-    pendingOp = pendingOp.then(fn).catch(() => {});
-    return pendingOp;
-  };
-
   browser.runtime.onInstalled.addListener(async () => {
     await recoverFromMissedAlarm();
   });
@@ -222,21 +233,11 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  // Returning the Promise keeps the message channel open in MV3 (Chrome 99+)
-  // and allows the fake browser test harness to await the full response.
-  browser.runtime.onMessage.addListener((message) => {
-    let resolve: (value: unknown) => void;
-    const result = new Promise((r) => { resolve = r; });
-    withLock(async () => {
-      const response = await handleMessage(message as MessageAction);
-      resolve!(response);
-    });
-    return result;
-  });
+  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
 
-  browser.alarms.onAlarm.addListener((alarm) => {
+  browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
-      void refreshBadge();
+      await refreshBadge();
       return;
     }
 
@@ -244,45 +245,50 @@ export default defineBackground(() => {
       return;
     }
 
-    return withLock(async () => {
-      const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-      const completed = completeTimer(state, config);
-      await setTimerState(completed);
+    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
 
-      if (state.phase === 'WORKING') {
-        await persistCompletedSession(state, Date.now());
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: '🍅 Tomate Complete!',
-          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-        });
-        if (config.openBreakTab !== false) {
-          try {
-            await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
-          } catch {
-            // tab creation can fail if no browser window is open
-          }
+    if (!isActivePhase(state.phase)) {
+      console.warn('[tomate] alarm fired in non-active phase', state.phase, '— skipping');
+      await clearActiveAlarms();
+      return;
+    }
+
+    const completed = completeTimer(state, config);
+    await setTimerState(completed);
+
+    if (state.phase === 'WORKING') {
+      await persistCompletedSession(state, Date.now());
+      await browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+        title: '🍅 Tomate Complete!',
+        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+      });
+      if (config.openBreakTab !== false) {
+        try {
+          await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
+        } catch {
+          // tab creation can fail if no browser window is open
         }
       }
+    }
 
-      if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-        });
-      }
+    if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
+      await browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+      });
+    }
 
-      if (isActivePhase(completed.phase) && completed.endTime !== null) {
-        await scheduleTimerAlarm(completed.endTime);
-        await startBadgeRefresh();
-      } else {
-        await clearActiveAlarms();
-      }
+    if (isActivePhase(completed.phase) && completed.endTime !== null) {
+      await scheduleTimerAlarm(completed.endTime);
+      await startBadgeRefresh();
+    } else {
+      await clearActiveAlarms();
+    }
 
-      await refreshBadge();
-    });
+    await refreshBadge();
   });
 });
