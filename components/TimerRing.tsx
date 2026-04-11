@@ -44,7 +44,8 @@ export default function TimerRing(props: TimerRingProps) {
         stroke-dasharray={String(CIRCUMFERENCE)}
         stroke-dashoffset={offset()}
         transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
-        class="transition-[stroke-dashoffset] duration-500 ease-linear"
+        class="transition-[stroke-dashoffset,stroke] duration-500 ease-linear"
+        style={{ "transition-property": "stroke-dashoffset, stroke", "transition-duration": "500ms, 400ms", "transition-timing-function": "linear, ease-in-out" }}
       />
     </svg>
   );
