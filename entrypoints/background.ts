@@ -40,6 +40,9 @@ export default defineBackground(() => {
   const BADGE_GOLD = '#CA8A04';
   const badgeApi = browser.action;
 
+  // Issue #146: dedup set to prevent double-processing if an alarm fires twice within the same tick
+  const recentlyHandledAlarms = new Set<string>();
+
   const refreshBadge = async (): Promise<void> => {
     const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
 
@@ -205,7 +208,17 @@ export default defineBackground(() => {
     }
   };
 
-  browser.runtime.onInstalled.addListener(async () => {
+  browser.runtime.onInstalled.addListener(async (details) => {
+    // Issue #103: clear stale blocking rules from previous installation on fresh install or update
+    if (details.reason === 'install' || details.reason === 'update') {
+      const existingRules = await browser.declarativeNetRequest.getDynamicRules();
+      if (existingRules.length > 0) {
+        await browser.declarativeNetRequest.updateDynamicRules({
+          removeRuleIds: existingRules.map((rule) => rule.id),
+        });
+      }
+    }
+
     await recoverFromMissedAlarm();
   });
 
@@ -225,12 +238,28 @@ export default defineBackground(() => {
       return;
     }
 
+    // Issue #146: prevent duplicate processing if the alarm fires more than once within the same second
+    const dedupKey = `${alarm.name}:${alarm.scheduledTime}`;
+    if (recentlyHandledAlarms.has(dedupKey)) {
+      return;
+    }
+    recentlyHandledAlarms.add(dedupKey);
+    setTimeout(() => recentlyHandledAlarms.delete(dedupKey), 2_000);
+
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const completed = completeTimer(state, config);
+
+    // Issue #6: reset completedToday if the calendar date has changed since the session began
+    const now = Date.now();
+    const stateWithResetIfNeeded: typeof state =
+      state.phase === 'WORKING' && state.startTime !== null && toDateKey(state.startTime) !== toDateKey(now)
+        ? { ...state, completedToday: 0 }
+        : state;
+
+    const completed = completeTimer(stateWithResetIfNeeded, config);
     await setTimerState(completed);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
+    if (stateWithResetIfNeeded.phase === 'WORKING') {
+      await persistCompletedSession(stateWithResetIfNeeded, now);
       await browser.notifications.create({
         type: 'basic',
         iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
@@ -239,12 +268,12 @@ export default defineBackground(() => {
       });
     }
 
-    if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
+    if (stateWithResetIfNeeded.phase === 'SHORT_BREAK' || stateWithResetIfNeeded.phase === 'LONG_BREAK') {
       await browser.notifications.create({
         type: 'basic',
         iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+        title: stateWithResetIfNeeded.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+        message: stateWithResetIfNeeded.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
       });
     }
 

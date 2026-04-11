@@ -45,6 +45,10 @@ describe('background service worker', () => {
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+
+    // Stub declarativeNetRequest methods not implemented by fakeBrowser
+    fakeBrowser.declarativeNetRequest.getDynamicRules = vi.fn().mockResolvedValue([]);
+    fakeBrowser.declarativeNetRequest.updateDynamicRules = vi.fn().mockResolvedValue(undefined);
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
