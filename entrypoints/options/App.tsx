@@ -12,6 +12,7 @@ export default function App() {
   const [longBreak, setLongBreak] = createSignal(30);
   const [openBreakTab, setOpenBreakTab] = createSignal(true);
   const [saved, setSaved] = createSignal(false);
+  const [isSaving, setIsSaving] = createSignal(false);
 
   onMount(async () => {
     const config = await getConfig();
@@ -22,16 +23,22 @@ export default function App() {
   });
 
   const handleSave = async () => {
-    const config: TimerConfig = {
-      workDuration: work() * MS_PER_MINUTE,
-      shortBreakDuration: shortBreak() * MS_PER_MINUTE,
-      longBreakDuration: longBreak() * MS_PER_MINUTE,
-      openBreakTab: openBreakTab(),
-    };
-    await setConfig(config);
-    await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (isSaving()) return;
+    setIsSaving(true);
+    try {
+      const config: TimerConfig = {
+        workDuration: work() * MS_PER_MINUTE,
+        shortBreakDuration: shortBreak() * MS_PER_MINUTE,
+        longBreakDuration: longBreak() * MS_PER_MINUTE,
+        openBreakTab: openBreakTab(),
+      };
+      await setConfig(config);
+      await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleReset = () => {
@@ -45,6 +52,11 @@ export default function App() {
     <div class="min-h-screen bg-red-50 flex items-start justify-center pt-16">
       <div class="w-full max-w-[400px] bg-white rounded-lg shadow-sm p-6">
         <h1 class="text-xl font-bold text-red-600 mb-6">Tomate Settings</h1>
+
+        <div class="mb-4 flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+          <span class="mt-0.5 shrink-0">ℹ️</span>
+          <span>Changes to durations apply to new sessions, not the currently active timer.</span>
+        </div>
 
         <div class="space-y-4">
           <label class="block">
@@ -98,9 +110,11 @@ export default function App() {
           <button
             type="button"
             onClick={handleSave}
-            class="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+            disabled={isSaving()}
+            aria-label="Save settings. Duration changes apply to the next session."
+            class="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Save
+            {isSaving() ? 'Saving…' : 'Save'}
           </button>
 
           <button
@@ -112,7 +126,7 @@ export default function App() {
           </button>
 
           <Show when={saved()}>
-            <span class="text-sm text-green-600">Settings saved ✓</span>
+            <span class="text-sm text-green-600">Settings saved. Duration changes apply to the next session.</span>
           </Show>
         </div>
       </div>
