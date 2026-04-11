@@ -237,11 +237,11 @@ export default defineBackground(() => {
         title: '🍅 Tomate Complete!',
         message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
       });
-      if (config.openBreakTab !== false) {
+      if (typeof browser.tabs !== 'undefined' && config.openBreakTab !== false) {
         try {
           await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
-        } catch {
-          // tab creation can fail if no browser window is open
+        } catch (err) {
+          console.warn('[tomate] browser.tabs.create() failed (no open window?):', err);
         }
       }
     }
