@@ -11,6 +11,7 @@ import {
   setConfig,
   setCurrentLabel,
   setTimerState,
+  toDateKey,
 } from '@/lib/storage';
 import { DEFAULT_CONFIG, INITIAL_STATE, type TimerConfig, type TimerState } from '@/lib/types';
 
@@ -30,11 +31,13 @@ const createConfig = (overrides: Partial<TimerConfig> = {}): TimerConfig => ({
   ...overrides,
 });
 
+let testId = 0;
+
 const initBackground = async (): Promise<void> => {
   (globalThis as typeof globalThis & { defineBackground: (main?: () => void | Promise<void>) => { main?: () => void | Promise<void> } }).defineBackground =
     (main) => ({ main });
 
-  const background = (await import(`../background?test=${Math.random()}`)) as BackgroundModule;
+  const background = (await import(`../background?test=${testId++}`)) as BackgroundModule;
   await background.default.main?.();
 };
 
@@ -132,7 +135,7 @@ describe('background service worker', () => {
         label: 'Focus block',
         startTime: 1_000,
         endTime: 5_000,
-        date: '1970-01-01',
+        date: toDateKey(1_000),
         duration: 3_000,
       },
     ]);
@@ -217,7 +220,7 @@ describe('background service worker', () => {
         label: 'Recovered work',
         startTime: 1_000,
         endTime: 10_000,
-        date: '1970-01-01',
+        date: toDateKey(1_000),
         duration: 1_000,
       },
     ]);
@@ -280,6 +283,80 @@ describe('background service worker', () => {
     await initBackground();
 
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
+  });
+
+  it('recovers a missed working alarm via onStartup and records the completed session', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    await setCurrentLabel('Startup recovery');
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onStartup.trigger();
+
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: 10_000,
+        endTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
+        duration: DEFAULT_CONFIG.shortBreakDuration,
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+    );
+    await expect(getPendingCelebration()).resolves.toBe(true);
+    await expect(getSessionHistory()).resolves.toEqual([
+      {
+        id: expect.any(String),
+        label: 'Startup recovery',
+        startTime: 1_000,
+        endTime: 10_000,
+        date: toDateKey(1_000),
+        duration: 1_000,
+      },
+    ]);
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
+      expect.objectContaining({
+        scheduledTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
+      }),
+    );
+  });
+
+  it('does not double-persist a session when both onInstalled and onStartup fire', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    await setCurrentLabel('Dedup test');
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      }),
+    );
+    await initBackground();
+
+    // Trigger both lifecycle events sequentially (as would happen on browser restart)
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
+    await fakeBrowser.runtime.onStartup.trigger();
+
+    // Only one session should be persisted — the second call should see the
+    // already-recovered (SHORT_BREAK) state and bail out via recoverMissedAlarm returning null
+    const sessions = await getSessionHistory();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toEqual(
+      expect.objectContaining({
+        label: 'Dedup test',
+        startTime: 1_000,
+        endTime: 10_000,
+        duration: 1_000,
+      }),
+    );
   });
 
   it('updates config during an active timer and recreates the timer alarm', async () => {
