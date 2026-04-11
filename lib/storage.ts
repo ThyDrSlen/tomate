@@ -18,6 +18,8 @@ const KEYS = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
+export const MAX_SESSIONS = 2000;
+const PRUNE_COUNT = Math.max(100, Math.ceil(MAX_SESSIONS * 0.1));
 
 const startOfLocalDay = (timestamp: number): Date => {
   const date = new Date(timestamp);
@@ -60,9 +62,31 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
 };
 
+const isQuotaExceededError = (err: unknown): boolean => {
+  if (!(err instanceof Error)) return false;
+  return err.message.toLowerCase().includes('quota') || err.name === 'QuotaExceededError';
+};
+
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+
+  // Always cap at MAX_SESSIONS before writing to prevent quota issues
+  const capped = sessions.length >= MAX_SESSIONS ? sessions.slice(sessions.length - MAX_SESSIONS + 1) : sessions;
+  const updated = [...capped, session];
+
+  try {
+    await browser.storage.local.set({ [KEYS.SESSIONS]: updated });
+  } catch (err) {
+    if (!isQuotaExceededError(err)) throw err;
+
+    // Prune oldest sessions and retry
+    const pruned = updated.slice(PRUNE_COUNT);
+    try {
+      await browser.storage.local.set({ [KEYS.SESSIONS]: pruned });
+    } catch (retryErr) {
+      console.error('[tomate] addCompletedSession: storage quota exceeded even after pruning', retryErr);
+    }
+  }
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
