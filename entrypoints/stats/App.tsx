@@ -50,6 +50,8 @@ export default function App() {
   const [sessions] = createResource(() => getSessionHistory());
   const [todayCount] = createResource(() => getTodayCount());
 
+  const hasError = () => !!(sessions.error || yearData.error || todayCount.error);
+
   const total = () => computeTotalCount(sessions() ?? []);
   const week = () => computeWeekCount(sessions() ?? []);
   const bestDay = () => computeBestDay(sessions() ?? []);
@@ -60,7 +62,7 @@ export default function App() {
       <div class="max-w-[800px] mx-auto">
         <div class="flex items-center justify-between mb-6">
           <h1 class="text-2xl font-bold text-red-600">Tomate Stats</h1>
-          <Show when={(sessions() ?? []).length > 0}>
+          <Show when={!hasError() && (sessions() ?? []).length > 0}>
             <button
               class="text-sm px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-100 transition-colors"
               onClick={() => exportCSV(sessions() ?? [])}
@@ -70,14 +72,20 @@ export default function App() {
           </Show>
         </div>
 
-        <Show when={(sessions() ?? []).length === 0}>
+        <Show when={hasError()}>
+          <div class="mb-4 px-4 py-3 bg-red-100 border border-red-300 rounded-lg text-sm text-red-700" role="alert">
+            Failed to load session data. Please try reloading the page.
+          </div>
+        </Show>
+
+        <Show when={!hasError() && (sessions() ?? []).length === 0}>
           <div class="text-center py-8 text-gray-500 dark:text-gray-400">
             <p class="text-lg">No sessions yet</p>
             <p class="text-sm mt-1">Complete your first Pomodoro to see your stats here.</p>
           </div>
         </Show>
 
-        <Show when={(sessions() ?? []).length > 0}>
+        <Show when={!hasError() && (sessions() ?? []).length > 0}>
           <div class="grid grid-cols-5 gap-3 mb-6">
             <StatCard label="Total tomates" value={total()} />
             <StatCard label="Today" value={todayCount() ?? 0} />
