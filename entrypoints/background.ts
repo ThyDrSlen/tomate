@@ -32,6 +32,22 @@ export type MessageAction =
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
 
+const MAX_DURATION_MS = 120 * 60_000; // 120 minutes
+
+function isValidConfig(config: unknown): config is TimerConfig {
+  if (!config || typeof config !== 'object') return false;
+  const c = config as Record<string, unknown>;
+  // Accept any positive finite duration up to 120 min; UI enforces 1-min floor separately
+  const isValidDuration = (v: unknown) =>
+    typeof v === 'number' && isFinite(v) && v > 0 && v <= MAX_DURATION_MS;
+  return (
+    isValidDuration(c.workDuration) &&
+    isValidDuration(c.shortBreakDuration) &&
+    isValidDuration(c.longBreakDuration) &&
+    typeof c.openBreakTab === 'boolean'
+  );
+}
+
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
   const ALARM_BADGE_REFRESH = 'badge-refresh';
@@ -185,6 +201,10 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
+        if (!isValidConfig(message.config)) {
+          console.warn('[tomate] UPDATE_CONFIG rejected: invalid config payload', message.config);
+          return state;
+        }
         await setConfig(message.config);
         const nextState = adjustDuration(state, message.config);
         await setTimerState(nextState);
@@ -226,6 +246,13 @@ export default defineBackground(() => {
     }
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+
+    if (!isActivePhase(state.phase)) {
+      console.warn('[tomate] alarm fired in non-active phase', state.phase, '— skipping');
+      await clearActiveAlarms();
+      return;
+    }
+
     const completed = completeTimer(state, config);
     await setTimerState(completed);
 
