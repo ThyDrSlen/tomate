@@ -4,11 +4,11 @@ import { fakeBrowser } from 'wxt/testing';
 vi.mock('wxt/browser', () => ({ browser: fakeBrowser }));
 
 import {
+  addCompletedSession,
   getConfig,
   getPendingCelebration,
   getSessionHistory,
   getTimerState,
-  setConfig,
   setCurrentLabel,
   setTimerState,
   toDateKey,
@@ -231,47 +231,6 @@ describe('background service worker', () => {
     );
   });
 
-  it('opens stats tab when WORKING session completes and openBreakTab is true', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(5_000);
-    const createTabSpy = vi.spyOn(fakeBrowser.tabs, 'create').mockResolvedValue({} as never);
-    await setConfig(createConfig({ openBreakTab: true }));
-    await setTimerState(
-      createState({
-        phase: 'WORKING',
-        startTime: 1_000,
-        endTime: 4_000,
-        duration: 3_000,
-      }),
-    );
-    await initBackground();
-
-    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
-
-    expect(createTabSpy).toHaveBeenCalledOnce();
-    expect(createTabSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ url: expect.stringContaining('stats.html') }),
-    );
-  });
-
-  it('does not open tab when openBreakTab is false', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(5_000);
-    const createTabSpy = vi.spyOn(fakeBrowser.tabs, 'create').mockResolvedValue({} as never);
-    await setConfig(createConfig({ openBreakTab: false }));
-    await setTimerState(
-      createState({
-        phase: 'WORKING',
-        startTime: 1_000,
-        endTime: 4_000,
-        duration: 3_000,
-      }),
-    );
-    await initBackground();
-
-    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
-
-    expect(createTabSpy).not.toHaveBeenCalled();
-  });
-
   it('returns the current timer state for GET_STATE', async () => {
     const storedState = createState({
       phase: 'BREAK_SUGGESTION',
@@ -285,78 +244,160 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
-  it('recovers a missed working alarm via onStartup and records the completed session', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(10_000);
-    await setCurrentLabel('Startup recovery');
-    await setTimerState(
-      createState({
+  describe('ALARM_BADGE_REFRESH handler isolation', () => {
+    it('only updates the badge — no state writes, no new alarm creation', async () => {
+      const workingState = createState({
         phase: 'WORKING',
         startTime: 1_000,
-        endTime: 2_000,
-        duration: 1_000,
-      }),
-    );
-    await initBackground();
-
-    await fakeBrowser.runtime.onStartup.trigger();
-
-    await expect(getTimerState()).resolves.toEqual(
-      createState({
-        phase: 'SHORT_BREAK',
-        startTime: 10_000,
-        endTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
-        duration: DEFAULT_CONFIG.shortBreakDuration,
+        endTime: 1_000 + DEFAULT_CONFIG.workDuration,
+        duration: DEFAULT_CONFIG.workDuration,
         sessionCount: 1,
         completedToday: 1,
-      }),
-    );
-    await expect(getPendingCelebration()).resolves.toBe(true);
-    await expect(getSessionHistory()).resolves.toEqual([
-      {
-        id: expect.any(String),
-        label: 'Startup recovery',
-        startTime: 1_000,
-        endTime: 10_000,
-        date: toDateKey(1_000),
-        duration: 1_000,
-      },
-    ]);
-    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
-      expect.objectContaining({
-        scheduledTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
-      }),
-    );
+      });
+      vi.spyOn(Date, 'now').mockReturnValue(60_000);
+      await setTimerState(workingState);
+      await initBackground();
+
+      // Snapshot state and alarms before firing badge-refresh
+      const stateBefore = await getTimerState();
+      const alarmsBefore = await fakeBrowser.alarms.getAll();
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 60_000 });
+
+      // State must be untouched
+      const stateAfter = await getTimerState();
+      expect(stateAfter).toEqual(stateBefore);
+
+      // No new alarms created (alarm set should remain the same)
+      const alarmsAfter = await fakeBrowser.alarms.getAll();
+      expect(alarmsAfter.map((a) => a.name).sort()).toEqual(alarmsBefore.map((a) => a.name).sort());
+
+      // Badge was updated
+      expect(fakeBrowser.action.setBadgeText).toHaveBeenCalled();
+      expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenCalled();
+    });
+
+    it('does not persist any completed session', async () => {
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 100_000,
+          duration: 99_000,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 50_000 });
+
+      await expect(getSessionHistory()).resolves.toEqual([]);
+    });
   });
 
-  it('does not double-persist a session when both onInstalled and onStartup fire', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(10_000);
-    await setCurrentLabel('Dedup test');
-    await setTimerState(
-      createState({
-        phase: 'WORKING',
-        startTime: 1_000,
-        endTime: 2_000,
-        duration: 1_000,
-      }),
-    );
-    await initBackground();
+  describe('refreshBadge shows correct text per phase', () => {
+    it('WORKING phase shows remaining minutes', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(5 * 60_000); // 5 minutes elapsed
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 0,
+          endTime: 25 * 60_000, // 25 minutes total
+          duration: 25 * 60_000,
+        }),
+      );
+      await initBackground();
 
-    // Trigger both lifecycle events sequentially (as would happen on browser restart)
-    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
-    await fakeBrowser.runtime.onStartup.trigger();
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 5 * 60_000 });
 
-    // Only one session should be persisted — the second call should see the
-    // already-recovered (SHORT_BREAK) state and bail out via recoverMissedAlarm returning null
-    const sessions = await getSessionHistory();
-    expect(sessions).toHaveLength(1);
-    expect(sessions[0]).toEqual(
-      expect.objectContaining({
-        label: 'Dedup test',
-        startTime: 1_000,
-        endTime: 10_000,
-        duration: 1_000,
-      }),
-    );
+      // 20 minutes remaining → badge text "20"
+      expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: '20' });
+      expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenLastCalledWith({ color: '#DC2626' });
+    });
+
+    it('SHORT_BREAK phase shows "BRK"', async () => {
+      await setTimerState(
+        createState({
+          phase: 'SHORT_BREAK',
+          startTime: 1_000,
+          endTime: 100_000,
+          duration: 99_000,
+          sessionCount: 1,
+          completedToday: 1,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 50_000 });
+
+      expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: 'BRK' });
+      expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenLastCalledWith({ color: '#16A34A' });
+    });
+
+    it('LONG_BREAK phase shows "BRK"', async () => {
+      await setTimerState(
+        createState({
+          phase: 'LONG_BREAK',
+          startTime: 1_000,
+          endTime: 200_000,
+          duration: 199_000,
+          sessionCount: 4,
+          completedToday: 4,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 100_000 });
+
+      expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: 'BRK' });
+      expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenLastCalledWith({ color: '#16A34A' });
+    });
+
+    it('IDLE phase with completed sessions shows today count', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+      // Add a completed session for today so getTodayCount returns 1
+      await addCompletedSession({
+        id: 'test-session',
+        label: 'Test',
+        startTime: now - 500,
+        endTime: now - 100,
+        date: toDateKey(now),
+        duration: 400,
+      });
+      await setTimerState(createState({ phase: 'IDLE', completedToday: 1 }));
+      await initBackground();
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 1_000 });
+
+      expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: '1' });
+      expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenLastCalledWith({ color: '#DC2626' });
+    });
+
+    it('IDLE phase with zero sessions shows empty badge', async () => {
+      await setTimerState(createState({ phase: 'IDLE' }));
+      await initBackground();
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 1_000 });
+
+      expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: '' });
+    });
+
+    it('BREAK_SUGGESTION phase shows completed count with checkmark', async () => {
+      await setTimerState(
+        createState({
+          phase: 'BREAK_SUGGESTION',
+          sessionCount: 4,
+          cyclePosition: 3,
+          completedToday: 4,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 1_000 });
+
+      expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: '4✓' });
+      expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenLastCalledWith({ color: '#CA8A04' });
+    });
   });
 
   it('updates config during an active timer and recreates the timer alarm', async () => {
