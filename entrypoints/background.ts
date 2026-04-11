@@ -213,7 +213,21 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+  let messageQueue: Promise<void> = Promise.resolve();
+
+  browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    messageQueue = messageQueue
+      .then(() => handleMessage(message as MessageAction))
+      .then((response) => {
+        sendResponse(response);
+      })
+      .catch((err) => {
+        console.error('[tomate] message handler error:', err);
+        sendResponse(undefined);
+      });
+    // Return true to keep the message channel open for the async sendResponse
+    return true;
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {

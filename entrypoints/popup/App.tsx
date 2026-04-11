@@ -77,21 +77,25 @@ export default function App() {
   const startTimer = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'START_TIMER' });
     setState(newState as TimerState);
+    window.close();
   };
 
   const abandonTimer = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'ABANDON_TIMER' });
     setState(newState as TimerState);
+    window.close();
   };
 
   const acceptLongBreak = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
     setState(newState as TimerState);
+    window.close();
   };
 
   const skipLongBreak = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
     setState(newState as TimerState);
+    window.close();
   };
 
   let labelTimeout: ReturnType<typeof setTimeout>;
