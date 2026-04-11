@@ -1,4 +1,4 @@
-import { createResource, For } from 'solid-js';
+import { createResource, For, Show } from 'solid-js';
 
 import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
@@ -44,20 +44,45 @@ export default function App() {
       <div class="max-w-[800px] mx-auto">
         <h1 class="text-2xl font-bold text-red-600 mb-6">Tomate Stats</h1>
 
-        <div class="grid grid-cols-5 gap-3 mb-6">
-          <StatCard label="Total tomates" value={total()} />
-          <StatCard label="Today" value={todayCount() ?? 0} />
-          <StatCard label="This week" value={week()} />
-          <StatCard
-            label="Best day"
-            value={bestDay()?.count ?? '—'}
-            sublabel={bestDay()?.date}
-          />
-          <StatCard
-            label="Current streak"
-            value={`${streak()}d`}
-          />
-        </div>
+        <Show
+          when={!sessions.loading}
+          fallback={
+            <div class="grid grid-cols-5 gap-3 mb-6">
+              <For each={[0, 1, 2, 3, 4]}>
+                {() => (
+                  <div class="bg-white rounded-xl p-4 shadow-sm border border-red-100 flex flex-col items-center gap-2 animate-pulse">
+                    <div class="h-8 w-12 bg-gray-200 rounded" />
+                    <div class="h-3 w-16 bg-gray-200 rounded" />
+                  </div>
+                )}
+              </For>
+            </div>
+          }
+        >
+          <Show
+            when={!sessions.error}
+            fallback={
+              <div class="mb-6 rounded-xl bg-red-100 border border-red-300 p-4 text-center text-sm text-red-700 font-medium">
+                Failed to load session data
+              </div>
+            }
+          >
+            <div class="grid grid-cols-5 gap-3 mb-6">
+              <StatCard label="Total tomates" value={total()} />
+              <StatCard label="Today" value={todayCount() ?? 0} />
+              <StatCard label="This week" value={week()} />
+              <StatCard
+                label="Best day"
+                value={bestDay()?.count ?? '—'}
+                sublabel={bestDay()?.date}
+              />
+              <StatCard
+                label="Current streak"
+                value={`${streak()}d`}
+              />
+            </div>
+          </Show>
+        </Show>
 
         <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">
           <h2 class="text-sm font-semibold text-gray-700 mb-3">365-day activity</h2>
