@@ -199,11 +199,14 @@ describe('background service worker', () => {
 
     await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
 
+    // With multi-hop recovery, both WORKING (ended 2_000) and SHORT_BREAK
+    // (would end 2_000 + 300_000) are checked. The break endTime (302_000)
+    // is > now (10_000), so recovery stops at SHORT_BREAK.
     await expect(getTimerState()).resolves.toEqual(
       createState({
         phase: 'SHORT_BREAK',
-        startTime: 10_000,
-        endTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
+        startTime: 2_000,
+        endTime: 2_000 + DEFAULT_CONFIG.shortBreakDuration,
         duration: DEFAULT_CONFIG.shortBreakDuration,
         sessionCount: 1,
         completedToday: 1,
@@ -220,9 +223,10 @@ describe('background service worker', () => {
         duration: 1_000,
       },
     ]);
+    // Break endTime = 2_000 + 300_000 = 302_000, still in future from recovery perspective
     await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
       expect.objectContaining({
-        scheduledTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
+        scheduledTime: 2_000 + DEFAULT_CONFIG.shortBreakDuration,
       }),
     );
   });
