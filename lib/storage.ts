@@ -38,27 +38,87 @@ export const toDateKey = (timestamp: number): string => {
   return `${year}-${month}-${day}`;
 };
 
-export const getTimerState = async (): Promise<TimerState> =>
-  (await getStoredValue<TimerState>(KEYS.TIMER_STATE)) ?? INITIAL_STATE;
+const VALID_PHASES = new Set<string>([
+  'IDLE',
+  'WORKING',
+  'SHORT_BREAK',
+  'LONG_BREAK',
+  'BREAK_SUGGESTION',
+]);
+
+const isValidTimerState = (raw: unknown): raw is TimerState => {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const s = raw as Record<string, unknown>;
+  return (
+    typeof s.phase === 'string' &&
+    VALID_PHASES.has(s.phase) &&
+    (s.endTime === null || typeof s.endTime === 'number') &&
+    (s.startTime === null || typeof s.startTime === 'number') &&
+    (s.duration === null || typeof s.duration === 'number') &&
+    typeof s.sessionCount === 'number' &&
+    typeof s.cyclePosition === 'number' &&
+    typeof s.completedToday === 'number'
+  );
+};
+
+export const getTimerState = async (): Promise<TimerState> => {
+  const raw = await getStoredValue<unknown>(KEYS.TIMER_STATE);
+  return isValidTimerState(raw) ? raw : INITIAL_STATE;
+};
 
 export const setTimerState = async (state: TimerState): Promise<void> => {
   await browser.storage.local.set({ [KEYS.TIMER_STATE]: state });
 };
 
-export const getConfig = async (): Promise<TimerConfig> =>
-  (await getStoredValue<TimerConfig>(KEYS.CONFIG)) ?? DEFAULT_CONFIG;
+const isValidNumber = (v: unknown): v is number =>
+  typeof v === 'number' && isFinite(v) && v > 0;
+
+export const getConfig = async (): Promise<TimerConfig> => {
+  const raw = await getStoredValue<unknown>(KEYS.CONFIG);
+  if (typeof raw !== 'object' || raw === null) return DEFAULT_CONFIG;
+  const stored = raw as Record<string, unknown>;
+  return Object.assign({}, DEFAULT_CONFIG, {
+    ...(isValidNumber(stored.workDuration) && {
+      workDuration: stored.workDuration,
+    }),
+    ...(isValidNumber(stored.shortBreakDuration) && {
+      shortBreakDuration: stored.shortBreakDuration,
+    }),
+    ...(isValidNumber(stored.longBreakDuration) && {
+      longBreakDuration: stored.longBreakDuration,
+    }),
+  });
+};
 
 export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
 };
 
+const isValidSession = (s: unknown): s is CompletedSession => {
+  if (typeof s !== 'object' || s === null) return false;
+  const obj = s as Record<string, unknown>;
+  return (
+    typeof obj.id === 'string' &&
+    obj.id.length > 0 &&
+    typeof obj.date === 'string' &&
+    obj.date.length > 0 &&
+    typeof obj.label === 'string'
+  );
+};
+
+const readSessions = async (): Promise<CompletedSession[]> => {
+  const raw = await getStoredValue<unknown>(KEYS.SESSIONS);
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isValidSession);
+};
+
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
-  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  const sessions = await readSessions();
   await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
-  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  const sessions = await readSessions();
 
   if (days === undefined) {
     return sessions;
@@ -85,7 +145,7 @@ export const getHeatmapData = async (days: number): Promise<Record<string, numbe
 
 export const getTodayCount = async (): Promise<number> => {
   const todayKey = toDateKey(Date.now());
-  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  const sessions = await readSessions();
 
   return sessions.filter((session) => session.date === todayKey).length;
 };

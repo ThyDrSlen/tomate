@@ -94,7 +94,8 @@ export default function App() {
     setState(newState as TimerState);
   };
 
-  let labelTimeout: ReturnType<typeof setTimeout>;
+  let labelTimeout: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(labelTimeout));
   const handleLabelChange = (value: string) => {
     setLabel(value);
     clearTimeout(labelTimeout);
