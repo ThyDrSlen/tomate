@@ -103,22 +103,33 @@ export default function App() {
 
   return (
     <div class="w-[360px] min-h-[400px] bg-red-50 p-4 flex flex-col items-center">
+      {/* Tab order: 1 — Settings */}
       <div class="w-full flex justify-between items-center mb-4">
         <h1 class="text-xl font-bold text-red-600">Tomate</h1>
         <button
           type="button"
+          tabindex="0"
           onClick={() => browser.runtime.openOptionsPage()}
           class="text-gray-400 hover:text-gray-600 text-lg"
-          aria-label="Settings"
+          aria-label="Open settings"
         >
           ⚙️
         </button>
       </div>
 
+      {/* Timer ring — decorative, not interactive */}
       <TimerRing progress={progress()} phase={state().phase} />
-      <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
-      <div class="text-sm text-gray-500 mt-1">
+      {/* Timer time and phase label — informational only, not in tab sequence */}
+      <div
+        class="text-4xl font-mono font-bold text-gray-800 mt-2"
+        aria-live="off"
+        aria-hidden="true"
+      >
+        {formatTime()}
+      </div>
+
+      <div class="text-sm text-gray-500 mt-1" aria-hidden="true">
         <Switch>
           <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
           <Match when={state().phase === 'WORKING'}>Working</Match>
@@ -128,8 +139,10 @@ export default function App() {
         </Switch>
       </div>
 
+      {/* Tab order: 2 — Task label input */}
       <TaskLabel value={label()} onChange={handleLabelChange} />
 
+      {/* Tab order: 3 — Control buttons (Start / Abandon / Skip Break / Long Break + Skip) */}
       <Controls
         phase={state().phase}
         onStart={startTimer}
@@ -144,13 +157,18 @@ export default function App() {
         <Heatmap days={120} data={heatmapData()} />
       </div>
 
-      <button
-        type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+      {/* Tab order: 4 — View stats link */}
+      <a
+        href={browser.runtime.getURL('/stats.html' as '/popup.html')}
+        onClick={(e) => {
+          e.preventDefault();
+          browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') });
+        }}
+        tabindex="0"
         class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
       >
         View all stats →
-      </button>
+      </a>
     </div>
   );
 }
