@@ -244,6 +244,26 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
+  it('deduplicates rapid double alarm fires and creates only one session', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    await initBackground();
+
+    // Simulate Chrome firing the same alarm twice in rapid succession (same scheduledTime bucket)
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    const sessions = await getSessionHistory();
+    expect(sessions).toHaveLength(1);
+  });
+
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });
