@@ -51,8 +51,12 @@ export default function App() {
               max={120}
               value={work()}
               onInput={(e) => setWork(Number(e.currentTarget.value))}
+              aria-describedby="work-hint"
+              aria-invalid={work() < 1 || work() > 120 ? 'true' : 'false'}
+              aria-required="true"
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+            <span id="work-hint" class="sr-only">Enter a value between 1 and 120</span>
           </label>
 
           <label class="block">
@@ -63,8 +67,12 @@ export default function App() {
               max={30}
               value={shortBreak()}
               onInput={(e) => setShortBreak(Number(e.currentTarget.value))}
+              aria-describedby="short-break-hint"
+              aria-invalid={shortBreak() < 1 || shortBreak() > 30 ? 'true' : 'false'}
+              aria-required="true"
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+            <span id="short-break-hint" class="sr-only">Enter a value between 1 and 30</span>
           </label>
 
           <label class="block">
@@ -75,8 +83,12 @@ export default function App() {
               max={60}
               value={longBreak()}
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
+              aria-describedby="long-break-hint"
+              aria-invalid={longBreak() < 5 || longBreak() > 60 ? 'true' : 'false'}
+              aria-required="true"
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+            <span id="long-break-hint" class="sr-only">Enter a value between 5 and 60</span>
           </label>
         </div>
 
