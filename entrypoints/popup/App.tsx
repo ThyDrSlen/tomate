@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -10,8 +10,9 @@ import {
   setCurrentLabel,
   getTodayCount,
   getHeatmapData,
+  getConfig,
 } from '@/lib/storage';
-import { INITIAL_STATE, type TimerState } from '@/lib/types';
+import { INITIAL_STATE, DEFAULT_CONFIG, type TimerState, type TimerConfig } from '@/lib/types';
 
 import TimerRing from '@/components/TimerRing';
 import Controls from '@/components/Controls';
@@ -25,6 +26,7 @@ export default function App() {
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [config, setConfig] = createSignal<TimerConfig>(DEFAULT_CONFIG);
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
@@ -42,6 +44,7 @@ export default function App() {
     }
 
     setLabel(await getCurrentLabel());
+    setConfig(await getConfig());
     await refreshStats();
 
     browser.storage.onChanged.addListener(refreshStats);
@@ -109,7 +112,8 @@ export default function App() {
           type="button"
           onClick={() => browser.runtime.openOptionsPage()}
           class="text-gray-400 hover:text-gray-600 text-lg"
-          aria-label="Settings"
+          aria-label="Open settings"
+          title="Open settings"
         >
           ⚙️
         </button>
@@ -127,6 +131,22 @@ export default function App() {
           <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
         </Switch>
       </div>
+
+      <Show when={state().phase === 'IDLE'}>
+        <p class="text-xs text-gray-400 mt-1">
+          {Math.round(config().workDuration / 60000)} min focus &middot;{' '}
+          <a
+            href="#"
+            class="underline hover:text-gray-600"
+            onClick={(e) => {
+              e.preventDefault();
+              browser.runtime.openOptionsPage();
+            }}
+          >
+            Customize
+          </a>
+        </p>
+      </Show>
 
       <TaskLabel value={label()} onChange={handleLabelChange} />
 
