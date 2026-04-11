@@ -51,7 +51,18 @@ export default function App() {
   createEffect(() => {
     const s = state();
     if (isActivePhase(s.phase) && s.endTime) {
-      const tick = () => setRemaining(Math.max(0, s.endTime! - Date.now()));
+      let synced = false;
+      const tick = () => {
+        const r = Math.max(0, s.endTime! - Date.now());
+        setRemaining(r);
+        if (r === 0 && !synced) {
+          synced = true;
+          // Timer expired - sync with background to get the new phase
+          browser.runtime.sendMessage({ action: 'GET_STATE' })
+            .then((newState) => { if (newState) setState(newState as TimerState); })
+            .catch(() => {}); // background may be busy processing
+        }
+      };
       tick();
       const id = setInterval(tick, 1000);
       onCleanup(() => clearInterval(id));
