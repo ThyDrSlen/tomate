@@ -40,3 +40,13 @@ export const INITIAL_STATE: TimerState = {
   cyclePosition: 0,
   completedToday: 0,
 };
+
+export function isTimerState(x: unknown): x is TimerState {
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    'phase' in x &&
+    'endTime' in x &&
+    'workDuration' in x
+  );
+}
