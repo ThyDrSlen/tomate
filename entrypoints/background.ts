@@ -220,6 +220,7 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
+    // BADGE_REFRESH only needs timer state (via refreshBadge) — no config fetch.
     if (alarm.name === ALARM_BADGE_REFRESH) {
       await refreshBadge();
       return;
@@ -229,6 +230,7 @@ export default defineBackground(() => {
       return;
     }
 
+    // ALARM_TIMER needs both state and config to compute the next phase.
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
     await setTimerState(completed);
