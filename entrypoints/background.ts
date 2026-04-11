@@ -32,6 +32,10 @@ export type MessageAction =
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
 
+const applyBlockingRules = (_sites: string[]): void => {
+  // TODO: implement declarativeNetRequest rules for blockedSites
+};
+
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
   const ALARM_BADGE_REFRESH = 'badge-refresh';
@@ -214,6 +218,13 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+
+  browser.storage.onChanged.addListener((changes) => {
+    if (!changes['blockedSites']) return;
+    const sites = changes['blockedSites'].newValue;
+    if (!Array.isArray(sites) || !sites.every((s) => typeof s === 'string')) return;
+    applyBlockingRules(sites);
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {

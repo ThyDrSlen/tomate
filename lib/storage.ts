@@ -45,8 +45,14 @@ export const setTimerState = async (state: TimerState): Promise<void> => {
   await browser.storage.local.set({ [KEYS.TIMER_STATE]: state });
 };
 
-export const getConfig = async (): Promise<TimerConfig> =>
-  (await getStoredValue<TimerConfig>(KEYS.CONFIG)) ?? DEFAULT_CONFIG;
+export const getConfig = async (): Promise<TimerConfig> => {
+  const raw = (await getStoredValue<Partial<TimerConfig>>(KEYS.CONFIG)) ?? {};
+  const sanitized = { ...DEFAULT_CONFIG, ...raw };
+  if (!Number.isFinite(sanitized.workDuration)) sanitized.workDuration = DEFAULT_CONFIG.workDuration;
+  if (!Number.isFinite(sanitized.shortBreakDuration)) sanitized.shortBreakDuration = DEFAULT_CONFIG.shortBreakDuration;
+  if (!Number.isFinite(sanitized.longBreakDuration)) sanitized.longBreakDuration = DEFAULT_CONFIG.longBreakDuration;
+  return sanitized;
+};
 
 export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
