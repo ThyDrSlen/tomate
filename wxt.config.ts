@@ -14,5 +14,14 @@ export default defineConfig({
         '128': '/icons/icon-128.png',
       },
     },
+    web_accessible_resources: [
+      {
+        resources: ['sounds/*', '*.html'],
+        matches: ['<all_urls>'],
+      },
+    ],
+    content_security_policy: {
+      extension_pages: "script-src 'self'; object-src 'self'; media-src 'self' blob:;",
+    },
   },
 });
