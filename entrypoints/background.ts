@@ -230,13 +230,15 @@ export default defineBackground(() => {
     await setTimerState(completed);
 
     if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-      });
+      await Promise.all([
+        persistCompletedSession(state, Date.now()),
+        browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: '🍅 Tomate Complete!',
+          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+        }),
+      ]);
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
