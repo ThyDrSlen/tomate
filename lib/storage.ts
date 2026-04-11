@@ -87,7 +87,11 @@ export const getTodayCount = async (): Promise<number> => {
   const todayKey = toDateKey(Date.now());
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
 
-  return sessions.filter((session) => session.date === todayKey).length;
+  let count = 0;
+  for (const session of sessions) {
+    if (session.date === todayKey) count++;
+  }
+  return count;
 };
 
 export const getPendingCelebration = async (): Promise<boolean> =>

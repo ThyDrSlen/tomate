@@ -41,7 +41,7 @@ export default defineBackground(() => {
   const badgeApi = browser.action;
 
   const refreshBadge = async (): Promise<void> => {
-    const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
+    const state = await getTimerState();
 
     let text = '';
     let color = BADGE_RED;
@@ -54,6 +54,7 @@ export default defineBackground(() => {
       }
       case 'SHORT_BREAK':
       case 'LONG_BREAK': {
+        // Badge shows static "BRK" — no count needed, skip storage read.
         text = 'BRK';
         color = BADGE_GREEN;
         break;
@@ -65,6 +66,7 @@ export default defineBackground(() => {
       }
       case 'IDLE':
       default: {
+        const todayCount = await getTodayCount();
         text = todayCount > 0 ? String(todayCount) : '';
         color = BADGE_RED;
         break;
