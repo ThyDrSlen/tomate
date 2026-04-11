@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
+import { ambientPlay, ambientClose } from '@/lib/ambient';
 import {
   getPendingCelebration,
   setPendingCelebration,
@@ -58,6 +59,16 @@ export default function App() {
     } else {
       setRemaining(0);
     }
+  });
+
+  // Ambient audio: play white-noise loop during focus, stop on break/idle.
+  createEffect(() => {
+    if (state().phase === 'WORKING') {
+      ambientPlay(browser.runtime.getURL('/sounds/ambient.mp3' as '/popup.html'));
+    } else {
+      ambientClose();
+    }
+    onCleanup(() => ambientClose());
   });
 
   const formatTime = () => {
