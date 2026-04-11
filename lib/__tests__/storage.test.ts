@@ -82,6 +82,43 @@ describe('storage helpers', () => {
     await expect(getConfig()).resolves.toEqual(config);
   });
 
+  describe('getConfig() duration validation', () => {
+    it('resets workDuration to default when stored value is 0', async () => {
+      await fakeBrowser.storage.local.set({ config: { ...DEFAULT_CONFIG, workDuration: 0 } });
+
+      const config = await getConfig();
+
+      expect(config.workDuration).toBe(DEFAULT_CONFIG.workDuration);
+    });
+
+    it('resets workDuration to default when stored value is a numeric string', async () => {
+      await fakeBrowser.storage.local.set({ config: { ...DEFAULT_CONFIG, workDuration: '1500000' } });
+
+      const config = await getConfig();
+
+      expect(config.workDuration).toBe(DEFAULT_CONFIG.workDuration);
+    });
+
+    it('resets workDuration to default when stored value is Infinity', async () => {
+      await fakeBrowser.storage.local.set({ config: { ...DEFAULT_CONFIG, workDuration: Infinity } });
+
+      const config = await getConfig();
+
+      expect(config.workDuration).toBe(DEFAULT_CONFIG.workDuration);
+    });
+
+    it('passes a valid config through unchanged', async () => {
+      const validConfig = createConfig({
+        workDuration: 10 * 60 * 1000,
+        shortBreakDuration: 2 * 60 * 1000,
+        longBreakDuration: 15 * 60 * 1000,
+      });
+      await fakeBrowser.storage.local.set({ config: validConfig });
+
+      await expect(getConfig()).resolves.toEqual(validConfig);
+    });
+  });
+
   it('adds a completed session and returns it from history', async () => {
     const session = createSession(new Date(2026, 2, 15, 9, 0, 0).getTime());
 

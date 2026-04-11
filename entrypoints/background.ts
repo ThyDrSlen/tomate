@@ -181,7 +181,11 @@ export default defineBackground(() => {
     await refreshBadge();
   };
 
-  const handleMessage = async (message: MessageAction) => {
+  const handleMessage = async (message: Partial<MessageAction>) => {
+    if (!message.action) {
+      return undefined;
+    }
+
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
 
     switch (message.action) {
@@ -272,7 +276,12 @@ export default defineBackground(() => {
       .catch((e) => console.error('[tomate] Failed to apply blocking rules on storage change:', e));
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+  browser.runtime.onMessage.addListener((message, sender) => {
+    if (sender.id !== undefined && sender.id !== browser.runtime.id) {
+      return undefined;
+    }
+    return handleMessage(message as Partial<MessageAction>);
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {

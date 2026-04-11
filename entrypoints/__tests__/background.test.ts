@@ -240,6 +240,24 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
+  it('returns undefined for a message with no action field', async () => {
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({});
+
+    expect(response).toBeUndefined();
+  });
+
+  it('falls through to the default case for an unrecognised action', async () => {
+    const storedState = createState({ phase: 'IDLE', completedToday: 0 });
+    await setTimerState(storedState);
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'STAT_TIMER' });
+
+    expect(response).toEqual(storedState);
+  });
+
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });
