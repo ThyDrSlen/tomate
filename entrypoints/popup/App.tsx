@@ -1,10 +1,9 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
 import {
-  getConfig,
   getPendingCelebration,
   setPendingCelebration,
   getCurrentLabel,
@@ -20,65 +19,34 @@ import TaskLabel from '@/components/TaskLabel';
 import TodayCount from '@/components/TodayCount';
 import Heatmap from '@/components/Heatmap';
 
-const GET_STATE_TIMEOUT_MS = 5000;
-
-const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
-  Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error('timeout')), ms),
-    ),
-  ]);
-
 export default function App() {
   const [state, setState] = createSignal<TimerState>(INITIAL_STATE);
   const [remaining, setRemaining] = createSignal(0);
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
-  const [dailyGoal, setDailyGoal] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
-  const [connectionError, setConnectionError] = createSignal(false);
-  const [goalToast, setGoalToast] = createSignal(false);
-  const [goalToastDismissed, setGoalToastDismissed] = createSignal(false);
-
-  const dismissGoalToast = () => {
-    setGoalToast(false);
-    setGoalToastDismissed(true);
-  };
 
   const refreshStats = async () => {
-    const prev = todayCount();
-    const next = await getTodayCount();
-    setTodayCount(next);
+    setTodayCount(await getTodayCount());
     setHeatmapData(await getHeatmapData(120));
-
-    const goal = dailyGoal();
-    if (goal > 0 && prev < goal && next >= goal && !goalToastDismissed()) {
-      setGoalToast(true);
-      setTimeout(dismissGoalToast, 5000);
-    }
   };
 
   onMount(async () => {
+    let currentState: TimerState;
     try {
-      const currentState = await withTimeout(
-        browser.runtime.sendMessage({ action: 'GET_STATE' }),
-        GET_STATE_TIMEOUT_MS,
-      );
-      setState(currentState as TimerState);
-    } catch {
-      setConnectionError(true);
-      return;
+      currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' }) as TimerState;
+    } catch (err) {
+      console.warn('[tomate] sendMessage failed (service worker cold start?), falling back to storage', err);
+      const { getTimerState } = await import('@/lib/storage');
+      currentState = await getTimerState();
     }
+    setState(currentState);
 
     const pending = await getPendingCelebration();
     if (pending) {
       playCelebration('work');
       await setPendingCelebration(false);
     }
-
-    const config = await getConfig();
-    setDailyGoal(config.dailyGoal ?? 0);
 
     setLabel(await getCurrentLabel());
     await refreshStats();
@@ -154,69 +122,42 @@ export default function App() {
         </button>
       </div>
 
-      <Show when={connectionError()}>
-        <div class="w-full bg-red-100 border border-red-300 rounded-lg p-4 text-center text-sm text-red-700 mt-4">
-          <p class="font-semibold">Could not connect to timer</p>
-          <p class="text-xs mt-1 text-red-500">The background service is not responding.</p>
-        </div>
-      </Show>
+      <TimerRing progress={progress()} phase={state().phase} />
+      <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
-      <Show when={!connectionError()}>
-        <Show when={goalToast()}>
-          <div
-            class="w-full bg-green-100 border border-green-300 rounded-lg px-3 py-2 mb-3 flex items-center justify-between text-sm text-green-800"
-            role="status"
-            aria-live="polite"
-          >
-            <span>You've reached today's goal! 🎉</span>
-            <button
-              type="button"
-              onClick={dismissGoalToast}
-              class="ml-2 text-green-600 hover:text-green-800 font-bold leading-none"
-              aria-label="Dismiss"
-            >
-              ×
-            </button>
-          </div>
-        </Show>
+      <div class="text-sm text-gray-500 mt-1">
+        <Switch>
+          <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
+          <Match when={state().phase === 'WORKING'}>Working</Match>
+          <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
+          <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
+          <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
+        </Switch>
+      </div>
 
-        <TimerRing progress={progress()} phase={state().phase} />
-        <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
+      <TaskLabel value={label()} onChange={handleLabelChange} />
 
-        <div class="text-sm text-gray-500 mt-1">
-          <Switch>
-            <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
-            <Match when={state().phase === 'WORKING'}>Working</Match>
-            <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
-            <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
-            <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
-          </Switch>
-        </div>
+      <Controls
+        phase={state().phase}
+        onStart={startTimer}
+        onAbandon={abandonTimer}
+        onAcceptLongBreak={acceptLongBreak}
+        onSkipLongBreak={skipLongBreak}
+      />
 
-        <TaskLabel value={label()} onChange={handleLabelChange} />
+      <TodayCount count={todayCount()} />
 
-        <Controls
-          phase={state().phase}
-          onStart={startTimer}
-          onAbandon={abandonTimer}
-          onAcceptLongBreak={acceptLongBreak}
-          onSkipLongBreak={skipLongBreak}
-        />
+      <div class="mt-2 w-full">
+        <Heatmap days={120} data={heatmapData()} />
+      </div>
 
-        <TodayCount count={todayCount()} goal={dailyGoal()} />
-
-        <div class="mt-2 w-full">
-          <Heatmap days={120} data={heatmapData()} />
-        </div>
-
-        <button
-          type="button"
-          onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
-          class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
-        >
-          View all stats →
-        </button>
-      </Show>
+      <button
+        type="button"
+        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+        class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
+      >
+        View all stats →
+      </button>
     </div>
   );
 }

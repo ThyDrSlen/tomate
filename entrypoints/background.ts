@@ -77,7 +77,8 @@ export default defineBackground(() => {
         break;
       }
       case 'BREAK_SUGGESTION': {
-        text = `${state.completedToday}✓`;
+        // Use todayCount from storage (same source as IDLE) to avoid stale value after midnight (#286)
+        text = `${todayCount}✓`;
         color = BADGE_GOLD;
         break;
       }
@@ -282,12 +283,15 @@ export default defineBackground(() => {
     // Only persist session and send notifications after state write succeeded
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-      });
+      // Guard against unavailable notifications API on Linux/Chromium-based browsers (#283)
+      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: '🍅 Tomate Complete!',
+          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+        });
+      }
       if (config.openBreakTab !== false) {
         try {
           await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
@@ -298,12 +302,15 @@ export default defineBackground(() => {
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-      });
+      // Guard against unavailable notifications API on Linux/Chromium-based browsers (#283)
+      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+        });
+      }
     }
 
     if (isActivePhase(completed.phase) && completed.endTime !== null) {

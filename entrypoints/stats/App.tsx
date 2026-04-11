@@ -41,8 +41,11 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
   const a = document.createElement('a');
   a.href = url;
   a.download = `tomate-sessions-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  // Delay revocation to ensure the browser can initiate the async download (#282)
+  setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
 const CURRENT_YEAR = new Date().getFullYear();
