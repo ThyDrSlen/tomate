@@ -57,6 +57,22 @@ export const addCompletedSession = async (session: CompletedSession): Promise<vo
   await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
 };
 
+/**
+ * Atomically writes the new timer state and appends a completed session in a
+ * single `chrome.storage.local.set()` call, preventing inconsistency if the
+ * service worker is killed between the two writes.
+ */
+export const setTimerStateAndSession = async (
+  state: TimerState,
+  session: CompletedSession,
+): Promise<void> => {
+  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  await browser.storage.local.set({
+    [KEYS.TIMER_STATE]: state,
+    [KEYS.SESSIONS]: [...sessions, session],
+  });
+};
+
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
 

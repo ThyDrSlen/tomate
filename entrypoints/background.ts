@@ -20,6 +20,7 @@ import {
   setConfig,
   setPendingCelebration,
   setTimerState,
+  setTimerStateAndSession,
   toDateKey,
 } from '@/lib/storage';
 import type { CompletedSession, TimerConfig } from '@/lib/types';
@@ -92,16 +93,16 @@ export default defineBackground(() => {
     await Promise.all([browser.alarms.clear(ALARM_TIMER), browser.alarms.clear(ALARM_BADGE_REFRESH)]);
   };
 
-  const persistCompletedSession = async (
+  const buildCompletedSession = async (
     state: Awaited<ReturnType<typeof getTimerState>>,
     endTime: number,
-  ): Promise<void> => {
+  ): Promise<CompletedSession | null> => {
     if (state.startTime === null || state.duration === null) {
-      return;
+      return null;
     }
 
     const label = await getCurrentLabel();
-    const session: CompletedSession = {
+    return {
       id: crypto.randomUUID(),
       label,
       startTime: state.startTime,
@@ -109,6 +110,16 @@ export default defineBackground(() => {
       date: toDateKey(state.startTime),
       duration: state.duration,
     };
+  };
+
+  const persistCompletedSession = async (
+    state: Awaited<ReturnType<typeof getTimerState>>,
+    endTime: number,
+  ): Promise<void> => {
+    const session = await buildCompletedSession(state, endTime);
+    if (session === null) {
+      return;
+    }
 
     await addCompletedSession(session);
     await setPendingCelebration(true);
@@ -227,16 +238,26 @@ export default defineBackground(() => {
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
-    await setTimerState(completed);
 
     if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
+      const now = Date.now();
+      const session = await buildCompletedSession(state, now);
+      if (session !== null) {
+        // Atomic write: timer state and completed session in one storage call,
+        // preventing inconsistency if the service worker dies between the two writes.
+        await setTimerStateAndSession(completed, session);
+        await setPendingCelebration(true);
+      } else {
+        await setTimerState(completed);
+      }
       await browser.notifications.create({
         type: 'basic',
         iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
         title: '🍅 Tomate Complete!',
         message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
       });
+    } else {
+      await setTimerState(completed);
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
