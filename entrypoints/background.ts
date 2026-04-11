@@ -22,7 +22,7 @@ import {
   setTimerState,
   toDateKey,
 } from '@/lib/storage';
-import type { CompletedSession, TimerConfig } from '@/lib/types';
+import type { CompletedSession, TimerConfig, TimerState } from '@/lib/types';
 
 export type MessageAction =
   | { action: 'START_TIMER' }
@@ -40,8 +40,11 @@ export default defineBackground(() => {
   const BADGE_GOLD = '#CA8A04';
   const badgeApi = browser.action;
 
-  const refreshBadge = async (): Promise<void> => {
-    const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
+  const refreshBadge = async (prefetchedState?: TimerState, prefetchedCount?: number): Promise<void> => {
+    const [state, todayCount] = await Promise.all([
+      prefetchedState !== undefined ? Promise.resolve(prefetchedState) : getTimerState(),
+      prefetchedCount !== undefined ? Promise.resolve(prefetchedCount) : getTodayCount(),
+    ]);
 
     let text = '';
     let color = BADGE_RED;
@@ -262,6 +265,6 @@ export default defineBackground(() => {
       await clearActiveAlarms();
     }
 
-    await refreshBadge();
+    await refreshBadge(completed, completed.completedToday);
   });
 });
