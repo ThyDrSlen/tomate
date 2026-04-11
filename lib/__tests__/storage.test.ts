@@ -149,4 +149,45 @@ describe('storage helpers', () => {
     await setPendingCelebration(false);
     await expect(getPendingCelebration()).resolves.toBe(false);
   });
+
+  it('returns DEFAULT_CONFIG when storage is empty', async () => {
+    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
+  });
+
+  it('coerces string duration values to numbers in stored config (issue #239)', async () => {
+    // Simulate a config where durations were stored as strings
+    await fakeBrowser.storage.local.set({
+      config: {
+        workDuration: '1500000',
+        shortBreakDuration: '300000',
+        longBreakDuration: '1800000',
+        openBreakTab: true,
+      },
+    });
+
+    const config = await getConfig();
+
+    expect(config.workDuration).toBe(1_500_000);
+    expect(config.shortBreakDuration).toBe(300_000);
+    expect(config.longBreakDuration).toBe(1_800_000);
+    expect(typeof config.workDuration).toBe('number');
+  });
+
+  it('falls back to DEFAULT_CONFIG values for non-positive or non-numeric durations', async () => {
+    await fakeBrowser.storage.local.set({
+      config: {
+        workDuration: -100,
+        shortBreakDuration: 'not-a-number',
+        longBreakDuration: 0,
+        openBreakTab: false,
+      },
+    });
+
+    const config = await getConfig();
+
+    expect(config.workDuration).toBe(DEFAULT_CONFIG.workDuration);
+    expect(config.shortBreakDuration).toBe(DEFAULT_CONFIG.shortBreakDuration);
+    expect(config.longBreakDuration).toBe(DEFAULT_CONFIG.longBreakDuration);
+    expect(config.openBreakTab).toBe(false);
+  });
 });
