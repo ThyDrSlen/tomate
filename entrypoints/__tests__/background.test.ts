@@ -33,7 +33,8 @@ const initBackground = async (): Promise<void> => {
   (globalThis as typeof globalThis & { defineBackground: (main?: () => void | Promise<void>) => { main?: () => void | Promise<void> } }).defineBackground =
     (main) => ({ main });
 
-  const background = (await import(`../background?test=${Math.random()}`)) as BackgroundModule;
+  vi.resetModules();
+  const background = (await import('../background')) as BackgroundModule;
   await background.default.main?.();
 };
 
@@ -269,5 +270,131 @@ describe('background service worker', () => {
         scheduledTime: 25_000,
       }),
     );
+  });
+
+  // Issue #75 — badge-refresh alarm handler integration tests
+
+  it('badge-refresh alarm updates the badge text with remaining minutes', async () => {
+    const now = 10_000;
+    const endTime = now + 24 * 60_000 + 30_000; // 24.5 minutes remaining → ceil = 25 → '25'
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: now,
+        endTime,
+        duration: endTime - now,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: now + 60_000 });
+
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: '25' });
+  });
+
+  it('badge-refresh alarm formats badge text correctly (ceiling of remaining minutes)', async () => {
+    // Exactly 1 ms remaining → ceil(1/60000) = 1
+    const now = 5_000;
+    const endTime = now + 1;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: now - 1,
+        endTime,
+        duration: 1,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: now + 60_000 });
+
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: '1' });
+  });
+
+  it('completing a working alarm clears the badge-refresh alarm', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+    );
+    await initBackground();
+    await fakeBrowser.alarms.create('badge-refresh', { periodInMinutes: 1 });
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 2_000 });
+
+    // Short break completion returns to IDLE — badge-refresh should be cleared
+    await expect(fakeBrowser.alarms.get('badge-refresh')).resolves.toBeUndefined();
+  });
+
+  it('ABANDON_TIMER clears the badge-refresh alarm', async () => {
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      }),
+    );
+    await initBackground();
+    await fakeBrowser.alarms.create('tomate-timer', { when: 2_000 });
+    await fakeBrowser.alarms.create('badge-refresh', { periodInMinutes: 1 });
+
+    await fakeBrowser.runtime.sendMessage({ action: 'ABANDON_TIMER' });
+
+    await expect(fakeBrowser.alarms.get('badge-refresh')).resolves.toBeUndefined();
+  });
+
+  // Issue #78 — invalid message payload and unknown action handling
+
+  it('UPDATE_CONFIG with zero workDuration still persists and returns state without throwing', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await initBackground();
+
+    // Zero duration is unusual but the background should not throw — adjustDuration handles it
+    const zeroConfig = createConfig({ workDuration: 0 });
+    await expect(
+      fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: zeroConfig }),
+    ).resolves.toBeDefined();
+    await expect(getConfig()).resolves.toEqual(zeroConfig);
+  });
+
+  it('UPDATE_CONFIG with negative workDuration still persists and returns state without throwing', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await initBackground();
+
+    const negativeConfig = createConfig({ workDuration: -1_000 });
+    await expect(
+      fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: negativeConfig }),
+    ).resolves.toBeDefined();
+    await expect(getConfig()).resolves.toEqual(negativeConfig);
+  });
+
+  it('onMessage with unknown action type returns current state gracefully', async () => {
+    const storedState = createState({ phase: 'IDLE', sessionCount: 2 });
+    await setTimerState(storedState);
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UNKNOWN_ACTION_XYZ' });
+
+    // The default branch returns current state — should not throw
+    expect(response).toEqual(storedState);
+  });
+
+  it('onMessage with undefined action field is handled without throwing', async () => {
+    const storedState = createState({ sessionCount: 1 });
+    await setTimerState(storedState);
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({} as never);
+
+    expect(response).toEqual(storedState);
   });
 });

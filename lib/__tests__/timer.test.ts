@@ -258,4 +258,95 @@ describe('timer state machine', () => {
     expect(isActivePhase('IDLE')).toBe(false);
     expect(isActivePhase('BREAK_SUGGESTION')).toBe(false);
   });
+
+  // Issue #76 — BREAK_SUGGESTION null endTime edge cases
+
+  it('completeTimer at cyclePosition 3 returns BREAK_SUGGESTION with null startTime and endTime', () => {
+    const config = createConfig({ workDuration: 1_000 });
+    const state = createState({
+      phase: 'WORKING',
+      startTime: 10_000,
+      endTime: 11_000,
+      duration: 1_000,
+      sessionCount: 3,
+      cyclePosition: 3,
+      completedToday: 3,
+    });
+
+    const result = completeTimer(state, config, 11_000);
+
+    expect(result.phase).toBe('BREAK_SUGGESTION');
+    expect(result.startTime).toBeNull();
+    expect(result.endTime).toBeNull();
+    expect(result.duration).toBeNull();
+    expect(result.sessionCount).toBe(4);
+    expect(result.completedToday).toBe(4);
+    expect(result.cyclePosition).toBe(3);
+  });
+
+  it('getRemainingMs on BREAK_SUGGESTION state (null endTime) returns 0 safely', () => {
+    const state = createState({
+      phase: 'BREAK_SUGGESTION',
+      startTime: null,
+      endTime: null,
+      duration: null,
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+
+    // Should not throw and should return 0 (endTime ?? 0 is 0, so Math.max(0, 0 - now) = 0)
+    const remaining = getRemainingMs(state, Date.now());
+    expect(remaining).toBe(0);
+  });
+
+  it('completes full 4-cycle sequence ending in BREAK_SUGGESTION with null times', () => {
+    const config = createConfig({
+      workDuration: 1_000,
+      shortBreakDuration: 200,
+      longBreakDuration: 500,
+    });
+    let state = createState();
+    let now = 0;
+
+    // Cycle 1: work → short break → idle (cyclePosition 0 → 1)
+    state = startTimer(state, config, now);
+    expect(state.phase).toBe('WORKING');
+    state = completeTimer(state, config, now + 1_000);
+    expect(state.phase).toBe('SHORT_BREAK');
+    state = completeTimer(state, config, now + 1_200);
+    expect(state.phase).toBe('IDLE');
+    expect(state.cyclePosition).toBe(1);
+
+    // Cycle 2: work → short break → idle (cyclePosition 1 → 2)
+    now += 2_000;
+    state = startTimer(state, config, now);
+    state = completeTimer(state, config, now + 1_000);
+    expect(state.phase).toBe('SHORT_BREAK');
+    state = completeTimer(state, config, now + 1_200);
+    expect(state.phase).toBe('IDLE');
+    expect(state.cyclePosition).toBe(2);
+
+    // Cycle 3: work → short break → idle (cyclePosition 2 → 3)
+    now += 2_000;
+    state = startTimer(state, config, now);
+    state = completeTimer(state, config, now + 1_000);
+    expect(state.phase).toBe('SHORT_BREAK');
+    state = completeTimer(state, config, now + 1_200);
+    expect(state.phase).toBe('IDLE');
+    expect(state.cyclePosition).toBe(3);
+
+    // Cycle 4: work → BREAK_SUGGESTION (cyclePosition stays 3, null times)
+    now += 2_000;
+    state = startTimer(state, config, now);
+    expect(state.phase).toBe('WORKING');
+    state = completeTimer(state, config, now + 1_000);
+
+    expect(state.phase).toBe('BREAK_SUGGESTION');
+    expect(state.sessionCount).toBe(4);
+    expect(state.cyclePosition).toBe(3);
+    expect(state.startTime).toBeNull();
+    expect(state.endTime).toBeNull();
+    expect(state.duration).toBeNull();
+  });
 });
