@@ -65,6 +65,7 @@ const generateHeatmapGrid = (
 };
 
 type MonthLabel = { label: string; column: number };
+type YearLabel = { label: string; column: number };
 
 export default function Heatmap(props: HeatmapProps) {
   const cellSize = () => props.cellSize ?? 12;
@@ -112,6 +113,25 @@ export default function Heatmap(props: HeatmapProps) {
         if (month !== lastMonth) {
           labels.push({ label: MONTH_NAMES[month], column: c });
           lastMonth = month;
+        }
+      }
+    }
+
+    return labels;
+  });
+
+  const yearLabels = createMemo(() => {
+    const cols = columns();
+    const labels: YearLabel[] = [];
+    let lastYear = -1;
+
+    for (let c = 0; c < cols.length; c++) {
+      const firstCell = cols[c].find((cell) => cell !== null);
+      if (firstCell) {
+        const year = Number.parseInt(firstCell.date.split('-')[0], 10);
+        if (year !== lastYear) {
+          labels.push({ label: String(year), column: c });
+          lastYear = year;
         }
       }
     }
@@ -175,7 +195,7 @@ export default function Heatmap(props: HeatmapProps) {
 
         {/* Heatmap cells - CSS Grid: 7 rows, auto columns */}
         <div
-          class="grid"
+          class="grid relative"
           style={{
             "grid-template-rows": `repeat(7, ${cellSize()}px)`,
             "grid-auto-flow": "column",
@@ -184,30 +204,50 @@ export default function Heatmap(props: HeatmapProps) {
           }}
         >
           <For each={columns()}>
-            {(col) => (
-              <For each={col}>
-                {(cell) =>
-                  cell ? (
+            {(col, colIndex) => {
+              const yearLabel = () =>
+                yearLabels().find((yl) => yl.column === colIndex());
+
+              return (
+                <>
+                  <For each={col}>
+                    {(cell) =>
+                      cell ? (
+                        <div
+                          class="rounded-sm"
+                          style={{
+                            width: `${cellSize()}px`,
+                            height: `${cellSize()}px`,
+                            "background-color": getIntensityColor(cell.count),
+                          }}
+                          title={tooltipText(cell)}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: `${cellSize()}px`,
+                            height: `${cellSize()}px`,
+                          }}
+                        />
+                      )
+                    }
+                  </For>
+                  {yearLabel() && (
                     <div
-                      class="rounded-sm"
+                      class="absolute bottom-0 text-[8px] font-semibold text-red-400 pointer-events-none"
                       style={{
-                        width: `${cellSize()}px`,
-                        height: `${cellSize()}px`,
-                        "background-color": getIntensityColor(cell.count),
+                        left: `${colIndex() * (cellSize() + gap)}px`,
+                        "white-space": "nowrap",
+                        "line-height": "1",
+                        transform: "translateY(100%) translateY(2px)",
                       }}
-                      title={tooltipText(cell)}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: `${cellSize()}px`,
-                        height: `${cellSize()}px`,
-                      }}
-                    />
-                  )
-                }
-              </For>
-            )}
+                    >
+                      {yearLabel()!.label}
+                    </div>
+                  )}
+                </>
+              );
+            }}
           </For>
         </div>
       </div>
