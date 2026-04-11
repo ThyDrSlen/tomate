@@ -4,6 +4,7 @@ import { fakeBrowser } from 'wxt/testing';
 vi.mock('wxt/browser', () => ({ browser: fakeBrowser }));
 
 import {
+  StorageQuotaError,
   addCompletedSession,
   getConfig,
   getCurrentLabel,
@@ -148,5 +149,100 @@ describe('storage helpers', () => {
 
     await setPendingCelebration(false);
     await expect(getPendingCelebration()).resolves.toBe(false);
+  });
+
+  describe('getConfig() schema version migration', () => {
+    it('migrates a v1 config (no _version field) to v2 with defaults filled in', async () => {
+      // Simulate a v1 config stored without the _version field
+      const v1Config = { workDuration: 20 * 60 * 1000, shortBreakDuration: 3 * 60 * 1000, longBreakDuration: 15 * 60 * 1000 };
+      await fakeBrowser.storage.local.set({ config: v1Config });
+
+      const result = await getConfig();
+
+      // Should return config with v1 values merged with defaults
+      expect(result).toEqual({
+        workDuration: 20 * 60 * 1000,
+        shortBreakDuration: 3 * 60 * 1000,
+        longBreakDuration: 15 * 60 * 1000,
+      });
+
+      // After migration, storage should now contain _version: 2
+      const stored = await fakeBrowser.storage.local.get('config');
+      expect((stored.config as { _version?: number })._version).toBe(2);
+    });
+
+    it('passes through a v2 config without overwriting storage', async () => {
+      const v2Config = { workDuration: 30 * 60 * 1000, shortBreakDuration: 10 * 60 * 1000, longBreakDuration: 20 * 60 * 1000, _version: 2 };
+      await fakeBrowser.storage.local.set({ config: v2Config });
+
+      const setMock = vi.spyOn(fakeBrowser.storage.local, 'set');
+
+      const result = await getConfig();
+
+      // Should return config without the internal _version field
+      expect(result).toEqual({
+        workDuration: 30 * 60 * 1000,
+        shortBreakDuration: 10 * 60 * 1000,
+        longBreakDuration: 20 * 60 * 1000,
+      });
+
+      // No migration write should have been triggered for an up-to-date config
+      expect(setMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('addCompletedSession() quota exceeded auto-prune and retry', () => {
+    it('calls pruneOldestSessions and retries when the first set throws QuotaExceededError', async () => {
+      const sessions = Array.from({ length: 10 }, (_, i) =>
+        createSession(new Date(2026, 0, i + 1).getTime(), { id: `session-${i}` }),
+      );
+      for (const s of sessions) {
+        await fakeBrowser.storage.local.set({ sessions: [...((await fakeBrowser.storage.local.get('sessions')).sessions as CompletedSession[] | undefined ?? []), s] });
+      }
+
+      const quotaError = Object.assign(new Error('QuotaExceededError'), { name: 'QuotaExceededError' });
+      let callCount = 0;
+      const originalSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
+      vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+        if ('sessions' in items) {
+          callCount++;
+          if (callCount === 1) throw quotaError;
+        }
+        return originalSet(items);
+      });
+
+      const newSession = createSession(new Date(2026, 0, 20).getTime(), { id: 'new-session' });
+      await addCompletedSession(newSession);
+
+      // The retry should have been attempted (set called twice for sessions)
+      expect(callCount).toBe(2);
+
+      // The saved sessions should be pruned (first 10% removed) plus the new session
+      const stored = await fakeBrowser.storage.local.get('sessions');
+      const savedSessions = stored.sessions as CompletedSession[];
+      expect(savedSessions[savedSessions.length - 1].id).toBe('new-session');
+      // 10 sessions → prune 1 → 9 remaining + new = 10
+      expect(savedSessions.length).toBe(10);
+    });
+
+    it('throws StorageQuotaError if the retry also fails with a quota error', async () => {
+      const quotaError = Object.assign(new Error('QUOTA_BYTES exceeded'), { name: 'QuotaExceededError' });
+      vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+        if ('sessions' in items) throw quotaError;
+      });
+
+      const newSession = createSession(Date.now(), { id: 'fail-session' });
+      await expect(addCompletedSession(newSession)).rejects.toBeInstanceOf(StorageQuotaError);
+    });
+
+    it('re-throws non-quota errors without pruning', async () => {
+      const unexpectedError = new Error('Unexpected storage error');
+      vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+        if ('sessions' in items) throw unexpectedError;
+      });
+
+      const newSession = createSession(Date.now(), { id: 'error-session' });
+      await expect(addCompletedSession(newSession)).rejects.toThrow('Unexpected storage error');
+    });
   });
 });

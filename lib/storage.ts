@@ -19,6 +19,9 @@ const KEYS = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
 const MAX_SESSIONS = 2000;
+const STORAGE_VERSION = 2;
+
+type StoredConfig = TimerConfig & { _version?: number };
 
 const startOfLocalDay = (timestamp: number): Date => {
   const date = new Date(timestamp);
@@ -29,6 +32,28 @@ const getStoredValue = async <T>(key: string): Promise<T | undefined> => {
   const result = await browser.storage.local.get(key);
   return result[key] as T | undefined;
 };
+
+const isQuotaError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes('QUOTA_BYTES') ||
+    error.message.includes('QuotaExceededError') ||
+    error.message.includes('quota') ||
+    (error as { name?: string }).name === 'QuotaExceededError'
+  );
+};
+
+const pruneOldestSessions = (sessions: CompletedSession[]): CompletedSession[] => {
+  const pruneCount = Math.max(1, Math.ceil(sessions.length * 0.1));
+  return sessions.slice(pruneCount);
+};
+
+export class StorageQuotaError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StorageQuotaError';
+  }
+}
 
 export const toDateKey = (timestamp: number): string => {
   const date = new Date(timestamp);
@@ -46,8 +71,20 @@ export const setTimerState = async (state: TimerState): Promise<void> => {
   await browser.storage.local.set({ [KEYS.TIMER_STATE]: state });
 };
 
-export const getConfig = async (): Promise<TimerConfig> =>
-  (await getStoredValue<TimerConfig>(KEYS.CONFIG)) ?? DEFAULT_CONFIG;
+export const getConfig = async (): Promise<TimerConfig> => {
+  const stored = await getStoredValue<StoredConfig>(KEYS.CONFIG);
+  if (stored === undefined) {
+    return DEFAULT_CONFIG;
+  }
+  const version = stored._version ?? 1;
+  const { _version: _v, ...storedFields } = stored;
+  const config: TimerConfig = { ...DEFAULT_CONFIG, ...storedFields };
+  if (version < STORAGE_VERSION) {
+    // v1→v2: ensure all new fields have defaults
+    await browser.storage.local.set({ [KEYS.CONFIG]: { ...config, _version: STORAGE_VERSION } });
+  }
+  return config;
+};
 
 export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
@@ -57,7 +94,27 @@ export const addCompletedSession = async (session: CompletedSession): Promise<vo
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
   const updated = [...sessions, session];
   const capped = updated.length > MAX_SESSIONS ? updated.slice(updated.length - MAX_SESSIONS) : updated;
-  await browser.storage.local.set({ [KEYS.SESSIONS]: capped });
+
+  try {
+    await browser.storage.local.set({ [KEYS.SESSIONS]: capped });
+  } catch (error) {
+    if (!isQuotaError(error)) {
+      throw error;
+    }
+
+    // Storage is full — prune oldest 10% of sessions and retry once
+    const pruned = pruneOldestSessions(sessions);
+    try {
+      await browser.storage.local.set({ [KEYS.SESSIONS]: [...pruned, session] });
+    } catch (retryError) {
+      if (isQuotaError(retryError)) {
+        throw new StorageQuotaError(
+          'Storage is full. Session could not be saved even after pruning old sessions.',
+        );
+      }
+      throw retryError;
+    }
+  }
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {

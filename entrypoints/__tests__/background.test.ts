@@ -270,4 +270,111 @@ describe('background service worker', () => {
       }),
     );
   });
+
+  it('reschedules the alarm on onInstalled reason=update when a timer is still pending', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 3_000,
+        endTime: 10_000,
+        duration: 7_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
+
+    // The alarm should be rescheduled at the existing endTime
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
+      expect.objectContaining({ scheduledTime: 10_000 }),
+    );
+    // Badge refresh periodic alarm should also be running
+    await expect(fakeBrowser.alarms.get('badge-refresh')).resolves.toEqual(
+      expect.objectContaining({ periodInMinutes: 1 }),
+    );
+    // Timer state should be unchanged (no recovery applied)
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'WORKING',
+        startTime: 3_000,
+        endTime: 10_000,
+        duration: 7_000,
+      }),
+    );
+  });
+
+  it('falls through to recoverFromMissedAlarm on onInstalled reason=update when timer has already expired', async () => {
+    // endTime is in the past, so reschedulePendingTimer falls through to recovery
+    vi.spyOn(Date, 'now').mockReturnValue(20_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
+
+    // Recovery should have completed the working session and transitioned to SHORT_BREAK
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: 20_000,
+        endTime: 20_000 + DEFAULT_CONFIG.shortBreakDuration,
+        duration: DEFAULT_CONFIG.shortBreakDuration,
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+    );
+  });
+
+  it('calls recoverFromMissedAlarm on onInstalled reason=install', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
+
+    // recoverFromMissedAlarm should run — overdue WORKING session transitions to SHORT_BREAK
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: 10_000,
+        endTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
+        duration: DEFAULT_CONFIG.shortBreakDuration,
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+    );
+  });
+
+  it('sets badge to ! when the onAlarm handler throws an error', async () => {
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    await initBackground();
+
+    // Make storage.set fail to trigger the catch block in the alarm handler
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockRejectedValue(new Error('Storage failure'));
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: '!' });
+  });
 });
