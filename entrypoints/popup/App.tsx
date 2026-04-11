@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -19,21 +19,43 @@ import TaskLabel from '@/components/TaskLabel';
 import TodayCount from '@/components/TodayCount';
 import Heatmap from '@/components/Heatmap';
 
+const RELEVANT_KEYS = ['timerState', 'sessions', 'sessionCounts', 'timerConfig'] as const;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), ms),
+    ),
+  ]);
+}
+
 export default function App() {
   const [state, setState] = createSignal<TimerState>(INITIAL_STATE);
   const [remaining, setRemaining] = createSignal(0);
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [connectionError, setConnectionError] = createSignal(false);
+  const [isSending, setIsSending] = createSignal(false);
 
-  const refreshStats = async () => {
+  const refreshStats = async (changes?: Record<string, unknown>) => {
+    if (changes && !RELEVANT_KEYS.some((k) => k in changes)) return;
     setTodayCount(await getTodayCount());
     setHeatmapData(await getHeatmapData(120));
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    try {
+      const currentState = await withTimeout(
+        browser.runtime.sendMessage({ action: 'GET_STATE' }),
+        5000,
+      );
+      setState(currentState as TimerState);
+    } catch {
+      setConnectionError(true);
+      return;
+    }
 
     const pending = await getPendingCelebration();
     if (pending) {
@@ -74,25 +96,35 @@ export default function App() {
     return 1 - remaining() / s.duration;
   };
 
-  const startTimer = async () => {
+  const withSending = (fn: () => Promise<void>) => async () => {
+    if (isSending()) return;
+    setIsSending(true);
+    try {
+      await fn();
+    } finally {
+      setTimeout(() => setIsSending(false), 300);
+    }
+  };
+
+  const startTimer = withSending(async () => {
     const newState = await browser.runtime.sendMessage({ action: 'START_TIMER' });
     setState(newState as TimerState);
-  };
+  });
 
-  const abandonTimer = async () => {
+  const abandonTimer = withSending(async () => {
     const newState = await browser.runtime.sendMessage({ action: 'ABANDON_TIMER' });
     setState(newState as TimerState);
-  };
+  });
 
-  const acceptLongBreak = async () => {
+  const acceptLongBreak = withSending(async () => {
     const newState = await browser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
     setState(newState as TimerState);
-  };
+  });
 
-  const skipLongBreak = async () => {
+  const skipLongBreak = withSending(async () => {
     const newState = await browser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
     setState(newState as TimerState);
-  };
+  });
 
   let labelTimeout: ReturnType<typeof setTimeout>;
   const handleLabelChange = (value: string) => {
@@ -115,6 +147,16 @@ export default function App() {
         </button>
       </div>
 
+      <Show
+        when={!connectionError()}
+        fallback={
+          <div class="flex flex-col items-center justify-center flex-1 gap-2 py-12 text-center">
+            <span class="text-4xl">⏱️</span>
+            <p class="text-sm font-medium text-gray-700">Could not connect to timer</p>
+            <p class="text-xs text-gray-400">Try closing and reopening the popup.</p>
+          </div>
+        }
+      >
       <TimerRing progress={progress()} phase={state().phase} />
       <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
@@ -132,6 +174,7 @@ export default function App() {
 
       <Controls
         phase={state().phase}
+        disabled={isSending()}
         onStart={startTimer}
         onAbandon={abandonTimer}
         onAcceptLongBreak={acceptLongBreak}
@@ -151,6 +194,7 @@ export default function App() {
       >
         View all stats →
       </button>
+      </Show>
     </div>
   );
 }
