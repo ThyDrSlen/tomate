@@ -105,6 +105,8 @@ export default function App() {
                     class="w-3 h-3 rounded-sm"
                     style={{ "background-color": item.color }}
                     title={item.label}
+                    role="img"
+                    aria-label={`${item.label} tomate${item.label === '1' ? '' : 's'}`}
                   />
                 )}
               </For>
