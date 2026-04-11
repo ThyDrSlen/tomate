@@ -24,6 +24,48 @@ import {
 } from '@/lib/storage';
 import type { CompletedSession, TimerConfig } from '@/lib/types';
 
+const MAX_BLOCKED_SITES = 100;
+
+type DnrRule = {
+  id: number;
+  priority: number;
+  action: { type: string };
+  condition: { urlFilter: string; resourceTypes: string[] };
+};
+
+declare const chrome: {
+  declarativeNetRequest: {
+    getDynamicRules(): Promise<DnrRule[]>;
+    updateDynamicRules(options: { removeRuleIds: number[]; addRules: DnrRule[] }): Promise<void>;
+  };
+};
+
+const applyBlockingRules = async (sites: string[]): Promise<void> => {
+  const sitesToBlock = sites.slice(0, MAX_BLOCKED_SITES);
+
+  const newRules: DnrRule[] = sitesToBlock.map((site, index) => ({
+    id: index + 1,
+    priority: 1,
+    action: { type: 'block' },
+    condition: {
+      urlFilter: site,
+      resourceTypes: ['main_frame'],
+    },
+  }));
+
+  const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
+  const existingIds = existingRules.map((r) => r.id);
+
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: existingIds,
+      addRules: newRules,
+    });
+  } catch (e) {
+    console.error('[tomate] Failed to update blocking rules:', e);
+  }
+};
+
 export type MessageAction =
   | { action: 'START_TIMER' }
   | { action: 'ABANDON_TIMER' }
@@ -173,6 +215,9 @@ export default defineBackground(() => {
         const nextState = abandonTimer(state);
         await setTimerState(nextState);
         await clearActiveAlarms();
+        if (state.phase === 'WORKING') {
+          await applyBlockingRules([]);
+        }
         await refreshBadge();
         return nextState;
       }
@@ -232,6 +277,22 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
+  browser.storage.onChanged.addListener((changes: Record<string, { newValue?: unknown }>, area: string) => {
+    if (area !== 'local' || !('blockedSites' in changes)) {
+      return;
+    }
+
+    getTimerState()
+      .then((state) => {
+        if (state.phase !== 'WORKING') {
+          return;
+        }
+        const sites = (changes['blockedSites'].newValue as string[]) ?? [];
+        return applyBlockingRules(sites);
+      })
+      .catch((e) => console.error('[tomate] Failed to apply blocking rules on storage change:', e));
+  });
+
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
@@ -273,6 +334,11 @@ export default defineBackground(() => {
         await startBadgeRefresh();
       } else {
         await clearActiveAlarms();
+      }
+
+      // Clear blocking rules whenever we leave the WORKING phase
+      if (state.phase === 'WORKING') {
+        await applyBlockingRules([]);
       }
 
       await refreshBadge();
