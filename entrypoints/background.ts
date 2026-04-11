@@ -139,10 +139,15 @@ export default defineBackground(() => {
     await refreshBadge();
   };
 
-  const handleMessage = async (message: MessageAction) => {
+  const handleMessage = async (message: unknown): Promise<ReturnType<typeof getTimerState> | undefined> => {
+    if (!message || typeof message !== 'object' || !('action' in message)) {
+      console.warn('[tomate] received message with no action:', message);
+      return;
+    }
+
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
 
-    switch (message.action) {
+    switch ((message as MessageAction).action) {
       case 'START_TIMER': {
         const nextState = startTimer(state, config);
         await setTimerState(nextState);
@@ -185,8 +190,9 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
-        await setConfig(message.config);
-        const nextState = adjustDuration(state, message.config);
+        const { config: newConfig } = message as Extract<MessageAction, { action: 'UPDATE_CONFIG' }>;
+        await setConfig(newConfig);
+        const nextState = adjustDuration(state, newConfig);
         await setTimerState(nextState);
 
         if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
@@ -213,7 +219,10 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+  browser.runtime.onMessage.addListener((message, sender) => {
+    if (sender.id !== browser.runtime.id) return; // reject cross-extension messages
+    return handleMessage(message);
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
