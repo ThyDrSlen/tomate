@@ -141,18 +141,37 @@ export const adjustDuration = (state: TimerState, newConfig: TimerConfig, now?: 
   };
 };
 
+export type RecoveryStep = { before: TimerState; after: TimerState };
+
 export const recoverMissedAlarm = (
   state: TimerState,
   config: TimerConfig,
   now?: number,
-): TimerState | null => {
+): RecoveryStep[] => {
   const currentTime = getNow(now);
+  const steps: RecoveryStep[] = [];
 
-  if (!isActivePhase(state.phase) || state.endTime === null || state.endTime >= currentTime) {
-    return null;
+  let current = state;
+  // Loop until the state is no longer an active phase with an expired endTime.
+  // Each transition uses the *original* endTime of the expired phase as the
+  // "now" for completeTimer, so the next phase's start/end times reflect when
+  // it would have actually started rather than the recovery moment. This lets
+  // us detect whether the next phase also expired during dormancy.
+  // Safety cap at 10 iterations to avoid infinite loops from unexpected states.
+  for (let i = 0; i < 10; i++) {
+    if (!isActivePhase(current.phase) || current.endTime === null || current.endTime >= currentTime) {
+      break;
+    }
+
+    // Use the expired phase's endTime as the transition moment so the next
+    // phase's endTime is calculated from when it *would* have started.
+    const transitionTime = current.endTime;
+    const next = completeTimer(current, config, transitionTime);
+    steps.push({ before: current, after: next });
+    current = next;
   }
 
-  return completeTimer(state, config, currentTime);
+  return steps;
 };
 
 export const getRemainingMs = (state: TimerState, now?: number): number =>
