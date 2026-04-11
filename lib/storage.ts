@@ -52,9 +52,19 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
 };
 
+const MAX_SESSIONS = 1000;
+const SESSION_RETENTION_MS = 365 * DAY_MS;
+
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  const cutoff = Date.now() - SESSION_RETENTION_MS;
+  let pruned = [...sessions, session].filter(
+    (s) => new Date(s.date).getTime() >= cutoff,
+  );
+  if (pruned.length > MAX_SESSIONS) {
+    pruned = pruned.slice(pruned.length - MAX_SESSIONS);
+  }
+  await browser.storage.local.set({ [KEYS.SESSIONS]: pruned });
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
