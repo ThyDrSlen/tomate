@@ -1,4 +1,4 @@
-import { createResource, For } from 'solid-js';
+import { createResource, createMemo, For } from 'solid-js';
 
 import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
@@ -34,10 +34,18 @@ export default function App() {
   const [sessions] = createResource(() => getSessionHistory());
   const [todayCount] = createResource(() => getTodayCount());
 
-  const total = () => computeTotalCount(sessions() ?? []);
-  const week = () => computeWeekCount(sessions() ?? []);
-  const bestDay = () => computeBestDay(sessions() ?? []);
-  const streak = () => computeStreak(sessions() ?? []);
+  const statsData = createMemo(() => {
+    const s = sessions();
+    if (!s) return null;
+    return {
+      total: computeTotalCount(s),
+      week: computeWeekCount(s),
+      best: computeBestDay(s),
+      streak: computeStreak(s),
+    };
+  });
+
+  const stableYearData = createMemo(() => yearData() ?? {});
 
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
@@ -45,23 +53,23 @@ export default function App() {
         <h1 class="text-2xl font-bold text-red-600 mb-6">Tomate Stats</h1>
 
         <div class="grid grid-cols-5 gap-3 mb-6">
-          <StatCard label="Total tomates" value={total()} />
+          <StatCard label="Total tomates" value={statsData()?.total ?? 0} />
           <StatCard label="Today" value={todayCount() ?? 0} />
-          <StatCard label="This week" value={week()} />
+          <StatCard label="This week" value={statsData()?.week ?? 0} />
           <StatCard
             label="Best day"
-            value={bestDay()?.count ?? '—'}
-            sublabel={bestDay()?.date}
+            value={statsData()?.best?.count ?? '—'}
+            sublabel={statsData()?.best?.date}
           />
           <StatCard
             label="Current streak"
-            value={`${streak()}d`}
+            value={`${statsData()?.streak ?? 0}d`}
           />
         </div>
 
         <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">
           <h2 class="text-sm font-semibold text-gray-700 mb-3">365-day activity</h2>
-          <Heatmap days={365} cellSize={14} data={yearData() ?? {}} />
+          <Heatmap days={365} cellSize={14} data={stableYearData()} />
 
           <div class="flex items-center gap-1 mt-3 text-[10px] text-gray-400">
             <span>Less</span>
