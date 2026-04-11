@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -25,15 +25,26 @@ export default function App() {
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [loadError, setLoadError] = createSignal(false);
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
     setHeatmapData(await getHeatmapData(120));
   };
 
+  const loadState = async () => {
+    setLoadError(false);
+    try {
+      const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
+      if (!currentState) throw new Error('No state returned');
+      setState(currentState as TimerState);
+    } catch {
+      setLoadError(true);
+    }
+  };
+
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    await loadState();
 
     const pending = await getPendingCelebration();
     if (pending) {
@@ -101,6 +112,8 @@ export default function App() {
     labelTimeout = setTimeout(() => setCurrentLabel(value), 300);
   };
 
+  const isHeatmapEmpty = () => Object.keys(heatmapData()).length === 0;
+
   return (
     <div class="w-[360px] min-h-[400px] bg-red-50 p-4 flex flex-col items-center">
       <div class="w-full flex justify-between items-center mb-4">
@@ -109,11 +122,25 @@ export default function App() {
           type="button"
           onClick={() => browser.runtime.openOptionsPage()}
           class="text-gray-400 hover:text-gray-600 text-lg"
-          aria-label="Settings"
+          aria-label="Open settings to configure timer durations"
+          title="Open settings to configure timer durations"
         >
           ⚙️
         </button>
       </div>
+
+      <Show when={loadError()}>
+        <div class="w-full mb-3 flex items-center justify-between rounded bg-yellow-100 px-3 py-2 text-sm text-yellow-800">
+          <span>Reconnecting…</span>
+          <button
+            type="button"
+            onClick={loadState}
+            class="ml-2 rounded bg-yellow-200 px-2 py-0.5 text-xs font-medium hover:bg-yellow-300"
+          >
+            Retry
+          </button>
+        </div>
+      </Show>
 
       <TimerRing progress={progress()} phase={state().phase} />
       <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
@@ -142,6 +169,9 @@ export default function App() {
 
       <div class="mt-2 w-full">
         <Heatmap days={120} data={heatmapData()} />
+        <Show when={isHeatmapEmpty()}>
+          <p class="mt-1 text-center text-xs text-gray-400">Complete a session to see your activity</p>
+        </Show>
       </div>
 
       <button
