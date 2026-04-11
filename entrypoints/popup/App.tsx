@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -10,6 +10,7 @@ import {
   setCurrentLabel,
   getTodayCount,
   getHeatmapData,
+  getTimerState,
 } from '@/lib/storage';
 import { INITIAL_STATE, type TimerState } from '@/lib/types';
 
@@ -25,6 +26,8 @@ export default function App() {
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [loading, setLoading] = createSignal(true);
+  const [initError, setInitError] = createSignal<string | null>(null);
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
@@ -32,8 +35,20 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    let currentState: TimerState;
+    try {
+      currentState = (await browser.runtime.sendMessage({ action: 'GET_STATE' })) as TimerState;
+    } catch {
+      // Service worker is not yet running (cold start) — fall back to direct storage read.
+      try {
+        currentState = await getTimerState();
+      } catch (storageErr) {
+        setInitError(storageErr instanceof Error ? storageErr.message : 'Failed to load timer state');
+        setLoading(false);
+        return;
+      }
+    }
+    setState(currentState);
 
     const pending = await getPendingCelebration();
     if (pending) {
@@ -43,6 +58,8 @@ export default function App() {
 
     setLabel(await getCurrentLabel());
     await refreshStats();
+
+    setLoading(false);
 
     browser.storage.onChanged.addListener(refreshStats);
     onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
@@ -115,42 +132,56 @@ export default function App() {
         </button>
       </div>
 
-      <TimerRing progress={progress()} phase={state().phase} />
-      <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
+      <Show when={loading()}>
+        <div class="flex-1 flex items-center justify-center text-gray-400 text-sm mt-16">
+          Loading…
+        </div>
+      </Show>
 
-      <div class="text-sm text-gray-500 mt-1">
-        <Switch>
-          <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
-          <Match when={state().phase === 'WORKING'}>Working</Match>
-          <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
-          <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
-          <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
-        </Switch>
-      </div>
+      <Show when={!loading() && initError() !== null}>
+        <div class="flex-1 flex items-center justify-center text-red-500 text-sm mt-16 text-center px-4">
+          {initError()}
+        </div>
+      </Show>
 
-      <TaskLabel value={label()} onChange={handleLabelChange} />
+      <Show when={!loading() && initError() === null}>
+        <TimerRing progress={progress()} phase={state().phase} />
+        <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
-      <Controls
-        phase={state().phase}
-        onStart={startTimer}
-        onAbandon={abandonTimer}
-        onAcceptLongBreak={acceptLongBreak}
-        onSkipLongBreak={skipLongBreak}
-      />
+        <div class="text-sm text-gray-500 mt-1">
+          <Switch>
+            <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
+            <Match when={state().phase === 'WORKING'}>Working</Match>
+            <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
+            <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
+            <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
+          </Switch>
+        </div>
 
-      <TodayCount count={todayCount()} />
+        <TaskLabel value={label()} onChange={handleLabelChange} />
 
-      <div class="mt-2 w-full">
-        <Heatmap days={120} data={heatmapData()} />
-      </div>
+        <Controls
+          phase={state().phase}
+          onStart={startTimer}
+          onAbandon={abandonTimer}
+          onAcceptLongBreak={acceptLongBreak}
+          onSkipLongBreak={skipLongBreak}
+        />
 
-      <button
-        type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
-        class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
-      >
-        View all stats →
-      </button>
+        <TodayCount count={todayCount()} />
+
+        <div class="mt-2 w-full">
+          <Heatmap days={120} data={heatmapData()} />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+          class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
+        >
+          View all stats →
+        </button>
+      </Show>
     </div>
   );
 }
