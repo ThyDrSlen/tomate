@@ -10,7 +10,6 @@ import {
   recoverMissedAlarm,
   skipLongBreak,
   startTimer,
-  type RecoveryStep,
 } from '@/lib/timer';
 import {
   addCompletedSession,
@@ -32,17 +31,6 @@ export type MessageAction =
   | { action: 'ACCEPT_LONG_BREAK' }
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
-
-/**
- * Returns true when every duration field in a TimerConfig is a positive
- * finite number.  Guards against zero / negative / NaN / Infinity values
- * that would cause adjustDuration to schedule an alarm in the past and
- * trigger an infinite alarm loop (#237).
- */
-const isValidConfig = (config: TimerConfig): boolean => {
-  const durations = [config.workDuration, config.shortBreakDuration, config.longBreakDuration];
-  return durations.every((d) => typeof d === 'number' && Number.isFinite(d) && d > 0);
-};
 
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
@@ -71,7 +59,7 @@ export default defineBackground(() => {
         break;
       }
       case 'BREAK_SUGGESTION': {
-        text = `${todayCount}✓`;
+        text = `${state.completedToday}✓`;
         color = BADGE_GOLD;
         break;
       }
@@ -128,27 +116,29 @@ export default defineBackground(() => {
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const steps = recoverMissedAlarm(state, config);
+    const recovered = recoverMissedAlarm(state, config);
 
-    if (steps.length === 0) {
+    if (!recovered) {
+      // Timer hasn't expired yet — if it's still active, reschedule the alarm
+      // (alarms are cleared when the extension updates or the service worker restarts)
+      if (isActivePhase(state.phase) && state.endTime !== null) {
+        await scheduleTimerAlarm(state.endTime);
+        await startBadgeRefresh();
+      }
       await refreshBadge();
       return;
     }
 
-    const finalState = steps[steps.length - 1].after;
-    await setTimerState(finalState);
+    await setTimerState(recovered);
 
-    // Persist a completed session for each WORKING phase that was completed
-    for (const step of steps) {
-      if (step.before.phase === 'WORKING') {
-        await persistCompletedSession(step.before, Date.now());
-      }
+    if (state.phase === 'WORKING') {
+      await persistCompletedSession(state, Date.now());
     }
 
-    if (isActivePhase(finalState.phase) && finalState.endTime !== null) {
-      await scheduleTimerAlarm(finalState.endTime);
+    if (recovered.phase === 'SHORT_BREAK' && recovered.endTime !== null) {
+      await scheduleTimerAlarm(recovered.endTime);
       await startBadgeRefresh();
-    } else {
+    } else if (!isActivePhase(recovered.phase)) {
       await clearActiveAlarms();
     }
 
@@ -201,10 +191,6 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
-        if (!isValidConfig(message.config)) {
-          return state;
-        }
-
         await setConfig(message.config);
         const nextState = adjustDuration(state, message.config);
         await setTimerState(nextState);
@@ -220,7 +206,6 @@ export default defineBackground(() => {
         return nextState;
       }
       default: {
-        console.warn('[tomate] Unknown action:', (message as any).action);
         return state;
       }
     }
@@ -234,16 +219,7 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  browser.runtime.onMessage.addListener((message, sender) => {
-    // Only accept messages from our own extension.
-    // sender.id is undefined for internal extension pages in some environments
-    // (e.g. test harnesses), so we allow those through; we only block when a
-    // sender.id is explicitly present and does not match our own extension ID.
-    if (sender.id !== undefined && sender.id !== browser.runtime.id) return;
-    return handleMessage(message as MessageAction);
-  });
-
-  const recentlyHandledAlarms = new Set<string>();
+  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
@@ -255,27 +231,18 @@ export default defineBackground(() => {
       return;
     }
 
-    const dedupeKey = `${alarm.name}:${Math.floor(alarm.scheduledTime / 5000)}`;
-    if (recentlyHandledAlarms.has(dedupeKey)) {
-      return;
-    }
-    recentlyHandledAlarms.add(dedupeKey);
-    setTimeout(() => recentlyHandledAlarms.delete(dedupeKey), 10_000);
-
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
     await setTimerState(completed);
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
-      if (typeof browser.notifications !== 'undefined') {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: '🍅 Tomate Complete!',
-          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-        });
-      }
+      await browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+        title: '🍅 Tomate Complete!',
+        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+      });
       if (config.openBreakTab !== false) {
         try {
           await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
@@ -286,14 +253,12 @@ export default defineBackground(() => {
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      if (typeof browser.notifications !== 'undefined') {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-        });
-      }
+      await browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+      });
     }
 
     if (isActivePhase(completed.phase) && completed.endTime !== null) {
