@@ -40,8 +40,13 @@ export default defineBackground(() => {
   const BADGE_GOLD = '#CA8A04';
   const badgeApi = browser.action;
 
-  const refreshBadge = async (): Promise<void> => {
-    const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
+  const refreshBadge = async (
+    preloadedState?: Awaited<ReturnType<typeof getTimerState>>,
+  ): Promise<void> => {
+    const [state, todayCount] = await Promise.all([
+      preloadedState ?? getTimerState(),
+      getTodayCount(),
+    ]);
 
     let text = '';
     let color = BADGE_RED;
@@ -255,6 +260,6 @@ export default defineBackground(() => {
       await clearActiveAlarms();
     }
 
-    await refreshBadge();
+    await refreshBadge(completed);
   });
 });
