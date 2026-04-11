@@ -184,6 +184,38 @@ describe('background service worker', () => {
     );
   });
 
+  it('reschedules an active timer alarm after extension update (endTime in the future)', async () => {
+    const futureEndTime = 20_000;
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 5_000,
+        endTime: futureEndTime,
+        duration: 15_000,
+      }),
+    );
+    await initBackground();
+
+    // Simulate extension update: alarms were cleared by Chrome, onInstalled fires
+    await fakeBrowser.alarms.clearAll();
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
+
+    // Timer state should be unchanged (session not yet complete)
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'WORKING',
+        startTime: 5_000,
+        endTime: futureEndTime,
+        duration: 15_000,
+      }),
+    );
+    // Alarm must be rescheduled to the original endTime
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
+      expect.objectContaining({ scheduledTime: futureEndTime }),
+    );
+  });
+
   it('recovers a missed working alarm on startup and records the completed session', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     await setCurrentLabel('Recovered work');
