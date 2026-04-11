@@ -95,9 +95,13 @@ export default defineBackground(() => {
   const persistCompletedSession = async (
     state: Awaited<ReturnType<typeof getTimerState>>,
     endTime: number,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     if (state.startTime === null || state.duration === null) {
-      return;
+      console.warn('[tomate] persistCompletedSession: skipping — state.startTime is null', {
+        phase: state.phase,
+        sessionCount: state.sessionCount,
+      });
+      return false;
     }
 
     const label = await getCurrentLabel();
@@ -112,6 +116,7 @@ export default defineBackground(() => {
 
     await addCompletedSession(session);
     await setPendingCelebration(true);
+    return true;
   };
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
@@ -126,6 +131,7 @@ export default defineBackground(() => {
     await setTimerState(recovered);
 
     if (state.phase === 'WORKING') {
+      // Returns false (and logs a warning) when state.startTime is null — session is skipped.
       await persistCompletedSession(state, Date.now());
     }
 
@@ -230,6 +236,7 @@ export default defineBackground(() => {
     await setTimerState(completed);
 
     if (state.phase === 'WORKING') {
+      // Returns false (and logs a warning) when state.startTime is null — session is skipped.
       await persistCompletedSession(state, Date.now());
       await browser.notifications.create({
         type: 'basic',
