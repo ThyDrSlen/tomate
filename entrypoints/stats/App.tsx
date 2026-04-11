@@ -6,11 +6,11 @@ import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } fr
 import Heatmap from '@/components/Heatmap';
 
 const INTENSITY_LEGEND = [
-  { color: '#F3F4F6', label: '0' },
-  { color: '#FCA5A5', label: '1' },
-  { color: '#EF4444', label: '2-3' },
-  { color: '#DC2626', label: '4-5' },
-  { color: '#991B1B', label: '6+' },
+  { cls: 'bg-gray-100 dark:bg-gray-700', label: '0' },
+  { cls: 'bg-red-300 dark:bg-red-900', label: '1' },
+  { cls: 'bg-red-400 dark:bg-red-700', label: '2-3' },
+  { cls: 'bg-red-600 dark:bg-red-500', label: '4-5' },
+  { cls: 'bg-red-800 dark:bg-red-400', label: '6+' },
 ] as const;
 
 type StatCardProps = {
@@ -47,7 +47,7 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
 
 export default function App() {
   const [yearData] = createResource(() => getHeatmapData(365));
-  const [sessions] = createResource(() => getSessionHistory());
+  const [sessions] = createResource(() => getSessionHistory(365));
   const [todayCount] = createResource(() => getTodayCount());
 
   const total = () => computeTotalCount(sessions() ?? []);
@@ -102,8 +102,7 @@ export default function App() {
               <For each={INTENSITY_LEGEND}>
                 {(item) => (
                   <div
-                    class="w-3 h-3 rounded-sm"
-                    style={{ "background-color": item.color }}
+                    class={`w-3 h-3 rounded-sm ${item.cls}`}
                     title={item.label}
                   />
                 )}
