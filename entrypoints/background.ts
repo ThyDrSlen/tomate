@@ -32,6 +32,10 @@ export type MessageAction =
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
 
+function assertNever(x: never): never {
+  throw new Error(`Unhandled message action: ${(x as { action: string }).action}`);
+}
+
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
   const ALARM_BADGE_REFRESH = 'badge-refresh';
@@ -200,7 +204,7 @@ export default defineBackground(() => {
         return nextState;
       }
       default: {
-        return state;
+        return assertNever(message);
       }
     }
   };
