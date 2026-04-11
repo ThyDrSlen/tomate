@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import type { Browser } from 'wxt/browser';
 
 import {
   abandonTimer,
@@ -22,7 +23,7 @@ import {
   setTimerState,
   toDateKey,
 } from '@/lib/storage';
-import type { CompletedSession, TimerConfig } from '@/lib/types';
+import type { CompletedSession, TimerConfig, TimerPhase } from '@/lib/types';
 
 export type MessageAction =
   | { action: 'START_TIMER' }
@@ -31,6 +32,44 @@ export type MessageAction =
   | { action: 'ACCEPT_LONG_BREAK' }
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
+
+const BLOCK_RULE_ID_BASE = 1000;
+
+const buildBlockingRules = (sites: string[]): Browser.declarativeNetRequest.Rule[] =>
+  sites.map((site, index) => {
+    const hostname = site.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    return {
+      id: BLOCK_RULE_ID_BASE + index,
+      priority: 1,
+      action: { type: 'block' as Browser.declarativeNetRequest.RuleActionType },
+      condition: {
+        urlFilter: `||${hostname}`,
+        resourceTypes: ['main_frame' as Browser.declarativeNetRequest.ResourceType],
+      },
+    };
+  });
+
+const applyBlockingRules = async (sites: string[]): Promise<void> => {
+  if (sites.length === 0) return;
+  const addRules = buildBlockingRules(sites);
+  const removeRuleIds = addRules.map((r) => r.id);
+  await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
+};
+
+const removeBlockingRules = async (): Promise<void> => {
+  const existing = await browser.declarativeNetRequest.getDynamicRules();
+  const removeRuleIds = existing.filter((r) => r.id >= BLOCK_RULE_ID_BASE).map((r) => r.id);
+  if (removeRuleIds.length === 0) return;
+  await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules: [] });
+};
+
+const syncBlockingForPhase = async (phase: TimerPhase, config: TimerConfig): Promise<void> => {
+  if (phase === 'WORKING') {
+    await applyBlockingRules(config.blockedSites ?? []);
+  } else {
+    await removeBlockingRules();
+  }
+};
 
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
@@ -136,6 +175,7 @@ export default defineBackground(() => {
       await clearActiveAlarms();
     }
 
+    await syncBlockingForPhase(recovered.phase, config);
     await refreshBadge();
   };
 
@@ -152,6 +192,7 @@ export default defineBackground(() => {
           await startBadgeRefresh();
         }
 
+        await syncBlockingForPhase(nextState.phase, config);
         await refreshBadge();
         return nextState;
       }
@@ -159,6 +200,7 @@ export default defineBackground(() => {
         const nextState = abandonTimer(state);
         await setTimerState(nextState);
         await clearActiveAlarms();
+        await removeBlockingRules();
         await refreshBadge();
         return nextState;
       }
@@ -174,6 +216,7 @@ export default defineBackground(() => {
           await startBadgeRefresh();
         }
 
+        await syncBlockingForPhase(nextState.phase, config);
         await refreshBadge();
         return nextState;
       }
@@ -181,6 +224,7 @@ export default defineBackground(() => {
         const nextState = skipLongBreak(state);
         await setTimerState(nextState);
         await clearActiveAlarms();
+        await removeBlockingRules();
         await refreshBadge();
         return nextState;
       }
@@ -196,6 +240,7 @@ export default defineBackground(() => {
           await clearActiveAlarms();
         }
 
+        await syncBlockingForPhase(nextState.phase, message.config);
         await refreshBadge();
         return nextState;
       }
@@ -255,6 +300,7 @@ export default defineBackground(() => {
       await clearActiveAlarms();
     }
 
+    await syncBlockingForPhase(completed.phase, config);
     await refreshBadge();
   });
 });
