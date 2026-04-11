@@ -5,7 +5,8 @@ type TimerRingProps = {
   phase: TimerPhase;
 };
 
-const PHASE_COLORS: Record<TimerPhase, string> = {
+// Light-mode colors
+const PHASE_COLORS_LIGHT: Record<TimerPhase, string> = {
   IDLE: '#9CA3AF',
   WORKING: '#DC2626',
   SHORT_BREAK: '#16A34A',
@@ -13,14 +14,28 @@ const PHASE_COLORS: Record<TimerPhase, string> = {
   BREAK_SUGGESTION: '#CA8A04',
 };
 
+// Dark-mode colors (slightly lighter for better contrast on dark backgrounds)
+const PHASE_COLORS_DARK: Record<TimerPhase, string> = {
+  IDLE: '#6B7280',
+  WORKING: '#EF4444',
+  SHORT_BREAK: '#22C55E',
+  LONG_BREAK: '#22C55E',
+  BREAK_SUGGESTION: '#EAB308',
+};
+
 const SIZE = 160;
 const STROKE = 8;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
+const isDark = () =>
+  typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+
 export default function TimerRing(props: TimerRingProps) {
   const offset = () => CIRCUMFERENCE * (1 - props.progress);
-  const color = () => PHASE_COLORS[props.phase];
+  const color = () =>
+    isDark() ? PHASE_COLORS_DARK[props.phase] : PHASE_COLORS_LIGHT[props.phase];
+  const trackColor = () => (isDark() ? '#374151' : '#E5E7EB');
 
   return (
     <svg width={SIZE} height={SIZE} class="timer-ring" viewBox={`0 0 ${SIZE} ${SIZE}`}>
@@ -30,7 +45,7 @@ export default function TimerRing(props: TimerRingProps) {
         cy={SIZE / 2}
         r={RADIUS}
         fill="none"
-        stroke="#E5E7EB"
+        stroke={trackColor()}
         stroke-width={STROKE}
       />
       <circle

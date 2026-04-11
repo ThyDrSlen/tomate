@@ -12,13 +12,24 @@ type HeatmapCell = {
   dayOfWeek: number;
 };
 
-const INTENSITY_COLORS = [
-  '#F3F4F6',
-  '#FCA5A5',
-  '#EF4444',
-  '#DC2626',
-  '#991B1B',
+const INTENSITY_COLORS_LIGHT = [
+  '#F3F4F6', // 0 — gray-100
+  '#FCA5A5', // 1 — red-300
+  '#EF4444', // 2-3 — red-500
+  '#DC2626', // 4-5 — red-600
+  '#991B1B', // 6+ — red-800
 ] as const;
+
+const INTENSITY_COLORS_DARK = [
+  '#374151', // 0 — gray-700
+  '#7F1D1D', // 1 — red-900
+  '#B91C1C', // 2-3 — red-700
+  '#DC2626', // 4-5 — red-600
+  '#EF4444', // 6+ — red-500
+] as const;
+
+const isDark = () =>
+  typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
 
 const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''] as const;
 
@@ -28,11 +39,12 @@ const MONTH_NAMES = [
 ] as const;
 
 const getIntensityColor = (count: number): string => {
-  if (count === 0) return INTENSITY_COLORS[0];
-  if (count === 1) return INTENSITY_COLORS[1];
-  if (count <= 3) return INTENSITY_COLORS[2];
-  if (count <= 5) return INTENSITY_COLORS[3];
-  return INTENSITY_COLORS[4];
+  const colors = isDark() ? INTENSITY_COLORS_DARK : INTENSITY_COLORS_LIGHT;
+  if (count === 0) return colors[0];
+  if (count === 1) return colors[1];
+  if (count <= 3) return colors[2];
+  if (count <= 5) return colors[3];
+  return colors[4];
 };
 
 const toDateKey = (date: Date): string => {
