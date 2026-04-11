@@ -13,6 +13,7 @@ import {
 } from '@/lib/timer';
 import {
   addCompletedSession,
+  getBlockedSites,
   getConfig,
   getCurrentLabel,
   getTimerState,
@@ -90,6 +91,40 @@ export default defineBackground(() => {
 
   const clearActiveAlarms = async (): Promise<void> => {
     await Promise.all([browser.alarms.clear(ALARM_TIMER), browser.alarms.clear(ALARM_BADGE_REFRESH)]);
+  };
+
+  const BLOCKING_RULE_ID_BASE = 1000;
+
+  const applyBlockingRules = async (sites: string[]): Promise<void> => {
+    const existingRules = await browser.declarativeNetRequest.getDynamicRules();
+    const removeRuleIds = existingRules.map((r) => r.id);
+
+    const addRules = sites
+      .filter((site) => site.trim().length > 0)
+      .map((site, index) => ({
+        id: BLOCKING_RULE_ID_BASE + index,
+        priority: 1,
+        action: { type: 'block' as const },
+        condition: {
+          urlFilter: site.trim(),
+          resourceTypes: [
+            'main_frame' as const,
+            'sub_frame' as const,
+            'xmlhttprequest' as const,
+          ],
+        },
+      }));
+
+    await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
+  };
+
+  const clearBlockingRules = async (): Promise<void> => {
+    const existingRules = await browser.declarativeNetRequest.getDynamicRules();
+    const removeRuleIds = existingRules.map((r) => r.id);
+
+    if (removeRuleIds.length > 0) {
+      await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules: [] });
+    }
   };
 
   const persistCompletedSession = async (
@@ -220,6 +255,30 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+
+  browser.storage.onChanged.addListener(async (changes) => {
+    const blockedSitesChanged = 'blockedSites' in changes;
+    const timerStateChanged = 'timerState' in changes;
+
+    if (!blockedSitesChanged && !timerStateChanged) {
+      return;
+    }
+
+    // Use the new timerState from the change event when available to avoid a
+    // race condition where storage.local hasn't flushed the new value yet.
+    const phase = timerStateChanged
+      ? ((changes['timerState']?.newValue as { phase?: string } | undefined)?.phase ?? 'IDLE')
+      : (await getTimerState()).phase;
+
+    if (phase === 'WORKING') {
+      const sites = blockedSitesChanged
+        ? ((changes['blockedSites']?.newValue as string[] | undefined) ?? [])
+        : await getBlockedSites();
+      await applyBlockingRules(sites);
+    } else {
+      await clearBlockingRules();
+    }
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
