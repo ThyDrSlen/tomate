@@ -70,47 +70,74 @@ export default function App() {
           </Show>
         </div>
 
-        <Show when={(sessions() ?? []).length === 0}>
-          <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-            <p class="text-lg">No sessions yet</p>
-            <p class="text-sm mt-1">Complete your first Pomodoro to see your stats here.</p>
-          </div>
-        </Show>
-
-        <Show when={(sessions() ?? []).length > 0}>
-          <div class="grid grid-cols-5 gap-3 mb-6">
-            <StatCard label="Total tomates" value={total()} />
-            <StatCard label="Today" value={todayCount() ?? 0} />
-            <StatCard label="This week" value={week()} />
-            <StatCard
-              label="Best day"
-              value={bestDay()?.count ?? '—'}
-              sublabel={bestDay()?.date}
-            />
-            <StatCard
-              label="Current streak"
-              value={`${streak()}d`}
-            />
-          </div>
-
-          <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">
-            <h2 class="text-sm font-semibold text-gray-700 mb-3">365-day activity</h2>
-            <Heatmap days={365} cellSize={14} data={yearData() ?? {}} />
-
-            <div class="flex items-center gap-1 mt-3 text-[10px] text-gray-400">
-              <span>Less</span>
-              <For each={INTENSITY_LEGEND}>
-                {(item) => (
-                  <div
-                    class="w-3 h-3 rounded-sm"
-                    style={{ "background-color": item.color }}
-                    title={item.label}
-                  />
-                )}
-              </For>
-              <span>More</span>
+        {/* Loading skeleton while sessions fetch */}
+        <Show
+          when={!sessions.loading}
+          fallback={
+            <div>
+              <div class="grid grid-cols-5 gap-3 mb-6">
+                <For each={Array(5).fill(null)}>
+                  {() => (
+                    <div class="bg-white rounded-xl p-4 shadow-sm border border-red-100 h-24 animate-pulse" />
+                  )}
+                </For>
+              </div>
+              <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100 h-40 animate-pulse" />
             </div>
-          </div>
+          }
+        >
+          <Show when={(sessions() ?? []).length === 0}>
+            <div class="text-center py-8 text-gray-500">
+              <p class="text-lg">No sessions yet</p>
+              <p class="text-sm mt-1">Complete your first Pomodoro to see your stats here.</p>
+            </div>
+          </Show>
+
+          <Show when={(sessions() ?? []).length > 0}>
+            <div class="grid grid-cols-5 gap-3 mb-6">
+              <Show
+                when={!todayCount.loading}
+                fallback={<div class="bg-white rounded-xl h-24 animate-pulse border border-red-100" />}
+              >
+                <StatCard label="Total tomates" value={total()} />
+                <StatCard label="Today" value={todayCount() ?? 0} />
+                <StatCard label="This week" value={week()} />
+                <StatCard
+                  label="Best day"
+                  value={bestDay()?.count ?? '—'}
+                  sublabel={bestDay()?.date}
+                />
+                <StatCard
+                  label="Current streak"
+                  value={`${streak()}d`}
+                />
+              </Show>
+            </div>
+
+            <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">
+              <h2 class="text-sm font-semibold text-gray-700 mb-3">365-day activity</h2>
+              <Show
+                when={!yearData.loading}
+                fallback={<div class="h-32 animate-pulse bg-gray-100 rounded-lg" />}
+              >
+                <Heatmap days={365} cellSize={14} data={yearData() ?? {}} />
+              </Show>
+
+              <div class="flex items-center gap-1 mt-3 text-[10px] text-gray-400">
+                <span>Less</span>
+                <For each={INTENSITY_LEGEND}>
+                  {(item) => (
+                    <div
+                      class="w-3 h-3 rounded-sm"
+                      style={{ "background-color": item.color }}
+                      title={item.label}
+                    />
+                  )}
+                </For>
+                <span>More</span>
+              </div>
+            </div>
+          </Show>
         </Show>
       </div>
     </div>

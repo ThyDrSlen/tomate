@@ -1,5 +1,5 @@
 import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
-import { browser } from 'wxt/browser';
+import { browser, type Browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
@@ -44,8 +44,11 @@ export default function App() {
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const onStorageChanged = (_changes: Record<string, Browser.storage.StorageChange>): void => {
+      void refreshStats();
+    };
+    browser.storage.onChanged.addListener(onStorageChanged);
+    onCleanup(() => browser.storage.onChanged.removeListener(onStorageChanged));
   });
 
   createEffect(() => {
@@ -58,6 +61,16 @@ export default function App() {
     } else {
       setRemaining(0);
     }
+  });
+
+  // Move keyboard focus to the primary action button on each phase transition (#49)
+  createEffect(() => {
+    // Access phase to track changes
+    state().phase;
+    queueMicrotask(() => {
+      const btn = document.querySelector<HTMLElement>('[data-focus-target]');
+      btn?.focus();
+    });
   });
 
   const formatTime = () => {
