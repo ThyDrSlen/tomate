@@ -17,7 +17,7 @@ export default function Controls(props: ControlsProps) {
           <button
             type="button"
             onClick={props.onStart}
-            class="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 active:bg-red-800 transition-colors"
+            class="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 active:bg-red-800 dark:bg-red-700 dark:hover:bg-red-600 dark:active:bg-red-500 transition-colors"
           >
             Start
           </button>
@@ -26,7 +26,7 @@ export default function Controls(props: ControlsProps) {
           <button
             type="button"
             onClick={props.onAbandon}
-            class="px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
+            class="px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 dark:active:bg-gray-500 transition-colors"
           >
             Abandon
           </button>
@@ -35,7 +35,7 @@ export default function Controls(props: ControlsProps) {
           <button
             type="button"
             onClick={props.onAbandon}
-            class="px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
+            class="px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 dark:active:bg-gray-500 transition-colors"
           >
             Skip Break
           </button>
@@ -44,14 +44,14 @@ export default function Controls(props: ControlsProps) {
           <button
             type="button"
             onClick={props.onAcceptLongBreak}
-            class="px-5 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors"
+            class="px-5 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 active:bg-green-800 dark:bg-green-700 dark:hover:bg-green-600 dark:active:bg-green-500 transition-colors"
           >
             Long Break
           </button>
           <button
             type="button"
             onClick={props.onSkipLongBreak}
-            class="px-5 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
+            class="px-5 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 dark:active:bg-gray-500 transition-colors"
           >
             Skip
           </button>

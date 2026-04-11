@@ -139,7 +139,27 @@ export default defineBackground(() => {
     await refreshBadge();
   };
 
+  // #177 — reschedule active timers on extension update (without triggering recovery)
+  const reschedulePendingTimer = async (): Promise<void> => {
+    const state = await getTimerState();
+    const activePhases: string[] = ['WORKING', 'SHORT_BREAK', 'LONG_BREAK'];
+
+    if (activePhases.includes(state.phase) && state.endTime !== null && state.endTime > Date.now()) {
+      await browser.alarms.clear(ALARM_TIMER);
+      await browser.alarms.create(ALARM_TIMER, { when: state.endTime });
+      await startBadgeRefresh();
+      await refreshBadge();
+    } else {
+      await recoverFromMissedAlarm();
+    }
+  };
+
   const handleMessage = async (message: MessageAction) => {
+    // #170 — GET_STATE only needs state, not config. Load lazily for other actions.
+    if (message.action === 'GET_STATE') {
+      return getTimerState();
+    }
+
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
 
     switch (message.action) {
@@ -161,9 +181,6 @@ export default defineBackground(() => {
         await clearActiveAlarms();
         await refreshBadge();
         return nextState;
-      }
-      case 'GET_STATE': {
-        return state;
       }
       case 'ACCEPT_LONG_BREAK': {
         const nextState = acceptLongBreak(state, config);
@@ -205,8 +222,14 @@ export default defineBackground(() => {
     }
   };
 
-  browser.runtime.onInstalled.addListener(async () => {
-    await recoverFromMissedAlarm();
+  // #177 — distinguish between install and update/chrome_update
+  browser.runtime.onInstalled.addListener(async (details) => {
+    if (details.reason === 'update' || details.reason === 'chrome_update') {
+      await reschedulePendingTimer();
+    } else {
+      // Fresh install or unknown reason — run standard recovery
+      await recoverFromMissedAlarm();
+    }
   });
 
   browser.runtime.onStartup.addListener(async () => {
@@ -215,53 +238,74 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
 
+  // #170 — BADGE_REFRESH only loads state (not config)
+  // #179 — wrap entire onAlarm in try/catch; notification errors are non-fatal
   browser.alarms.onAlarm.addListener(async (alarm) => {
-    if (alarm.name === ALARM_BADGE_REFRESH) {
-      await refreshBadge();
-      return;
-    }
+    try {
+      if (alarm.name === ALARM_BADGE_REFRESH) {
+        // Perf: only state needed for badge refresh, config not required
+        await refreshBadge();
+        return;
+      }
 
-    if (alarm.name !== ALARM_TIMER) {
-      return;
-    }
+      if (alarm.name !== ALARM_TIMER) {
+        return;
+      }
 
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const completed = completeTimer(state, config);
-    await setTimerState(completed);
+      const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+      const completed = completeTimer(state, config);
+      await setTimerState(completed);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-      });
-      if (config.openBreakTab !== false) {
+      if (state.phase === 'WORKING') {
+        await persistCompletedSession(state, Date.now());
         try {
-          await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
-        } catch {
-          // tab creation can fail if no browser window is open
+          await browser.notifications.create({
+            type: 'basic',
+            iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+            title: '🍅 Tomate Complete!',
+            message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+          });
+        } catch (notifErr) {
+          console.error('[tomate] onAlarm: failed to create work-complete notification:', notifErr);
+        }
+        if (config.openBreakTab !== false) {
+          try {
+            await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
+          } catch {
+            // tab creation can fail if no browser window is open
+          }
         }
       }
-    }
 
-    if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-      });
-    }
+      if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
+        try {
+          await browser.notifications.create({
+            type: 'basic',
+            iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+            title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+            message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+          });
+        } catch (notifErr) {
+          console.error('[tomate] onAlarm: failed to create break-complete notification:', notifErr);
+        }
+      }
 
-    if (isActivePhase(completed.phase) && completed.endTime !== null) {
-      await scheduleTimerAlarm(completed.endTime);
-      await startBadgeRefresh();
-    } else {
-      await clearActiveAlarms();
-    }
+      if (isActivePhase(completed.phase) && completed.endTime !== null) {
+        await scheduleTimerAlarm(completed.endTime);
+        await startBadgeRefresh();
+      } else {
+        await clearActiveAlarms();
+      }
 
-    await refreshBadge();
+      await refreshBadge();
+    } catch (err) {
+      console.error('[tomate] onAlarm error:', err);
+      try {
+        await badgeApi.setBadgeText({ text: '!' });
+        await badgeApi.setBadgeBackgroundColor({ color: BADGE_RED });
+      } catch {
+        // badge update failed — nothing more we can do
+      }
+    }
   });
 });
