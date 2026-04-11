@@ -4,13 +4,13 @@ import { browser } from 'wxt/browser';
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
 import {
+  getConfig,
   getPendingCelebration,
   setPendingCelebration,
   getCurrentLabel,
   setCurrentLabel,
   getTodayCount,
   getHeatmapData,
-  getTimerState,
 } from '@/lib/storage';
 import { INITIAL_STATE, type TimerState } from '@/lib/types';
 
@@ -20,35 +20,56 @@ import TaskLabel from '@/components/TaskLabel';
 import TodayCount from '@/components/TodayCount';
 import Heatmap from '@/components/Heatmap';
 
+const GET_STATE_TIMEOUT_MS = 5000;
+
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+  Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), ms),
+    ),
+  ]);
+
 export default function App() {
   const [state, setState] = createSignal<TimerState>(INITIAL_STATE);
   const [remaining, setRemaining] = createSignal(0);
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
+  const [dailyGoal, setDailyGoal] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
-  const [loading, setLoading] = createSignal(true);
-  const [initError, setInitError] = createSignal<string | null>(null);
+  const [connectionError, setConnectionError] = createSignal(false);
+  const [goalToast, setGoalToast] = createSignal(false);
+  const [goalToastDismissed, setGoalToastDismissed] = createSignal(false);
+
+  const dismissGoalToast = () => {
+    setGoalToast(false);
+    setGoalToastDismissed(true);
+  };
 
   const refreshStats = async () => {
-    setTodayCount(await getTodayCount());
+    const prev = todayCount();
+    const next = await getTodayCount();
+    setTodayCount(next);
     setHeatmapData(await getHeatmapData(120));
+
+    const goal = dailyGoal();
+    if (goal > 0 && prev < goal && next >= goal && !goalToastDismissed()) {
+      setGoalToast(true);
+      setTimeout(dismissGoalToast, 5000);
+    }
   };
 
   onMount(async () => {
-    let currentState: TimerState;
     try {
-      currentState = (await browser.runtime.sendMessage({ action: 'GET_STATE' })) as TimerState;
+      const currentState = await withTimeout(
+        browser.runtime.sendMessage({ action: 'GET_STATE' }),
+        GET_STATE_TIMEOUT_MS,
+      );
+      setState(currentState as TimerState);
     } catch {
-      // Service worker is not yet running (cold start) — fall back to direct storage read.
-      try {
-        currentState = await getTimerState();
-      } catch (storageErr) {
-        setInitError(storageErr instanceof Error ? storageErr.message : 'Failed to load timer state');
-        setLoading(false);
-        return;
-      }
+      setConnectionError(true);
+      return;
     }
-    setState(currentState);
 
     const pending = await getPendingCelebration();
     if (pending) {
@@ -56,10 +77,11 @@ export default function App() {
       await setPendingCelebration(false);
     }
 
+    const config = await getConfig();
+    setDailyGoal(config.dailyGoal ?? 0);
+
     setLabel(await getCurrentLabel());
     await refreshStats();
-
-    setLoading(false);
 
     browser.storage.onChanged.addListener(refreshStats);
     onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
@@ -132,19 +154,32 @@ export default function App() {
         </button>
       </div>
 
-      <Show when={loading()}>
-        <div class="flex-1 flex items-center justify-center text-gray-400 text-sm mt-16">
-          Loading…
+      <Show when={connectionError()}>
+        <div class="w-full bg-red-100 border border-red-300 rounded-lg p-4 text-center text-sm text-red-700 mt-4">
+          <p class="font-semibold">Could not connect to timer</p>
+          <p class="text-xs mt-1 text-red-500">The background service is not responding.</p>
         </div>
       </Show>
 
-      <Show when={!loading() && initError() !== null}>
-        <div class="flex-1 flex items-center justify-center text-red-500 text-sm mt-16 text-center px-4">
-          {initError()}
-        </div>
-      </Show>
+      <Show when={!connectionError()}>
+        <Show when={goalToast()}>
+          <div
+            class="w-full bg-green-100 border border-green-300 rounded-lg px-3 py-2 mb-3 flex items-center justify-between text-sm text-green-800"
+            role="status"
+            aria-live="polite"
+          >
+            <span>You've reached today's goal! 🎉</span>
+            <button
+              type="button"
+              onClick={dismissGoalToast}
+              class="ml-2 text-green-600 hover:text-green-800 font-bold leading-none"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        </Show>
 
-      <Show when={!loading() && initError() === null}>
         <TimerRing progress={progress()} phase={state().phase} />
         <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
@@ -168,7 +203,7 @@ export default function App() {
           onSkipLongBreak={skipLongBreak}
         />
 
-        <TodayCount count={todayCount()} />
+        <TodayCount count={todayCount()} goal={dailyGoal()} />
 
         <div class="mt-2 w-full">
           <Heatmap days={120} data={heatmapData()} />

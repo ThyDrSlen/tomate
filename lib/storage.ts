@@ -14,13 +14,12 @@ const KEYS = {
   SESSIONS: 'sessions',
   PENDING_CELEBRATION: 'pendingCelebration',
   CURRENT_LABEL: 'currentLabel',
-  BLOCKED_SITES: 'blockedSites',
 } as const;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
-export const MAX_SESSIONS = 2000;
-const PRUNE_COUNT = Math.max(100, Math.ceil(MAX_SESSIONS * 0.1));
+const MAX_SESSIONS = 2000;
+const PRUNE_FACTOR = 0.1;
 
 const startOfLocalDay = (timestamp: number): Date => {
   const date = new Date(timestamp);
@@ -48,45 +47,34 @@ export const setTimerState = async (state: TimerState): Promise<void> => {
   await browser.storage.local.set({ [KEYS.TIMER_STATE]: state });
 };
 
-export const getConfig = async (): Promise<TimerConfig> => {
-  const stored = await getStoredValue<Partial<TimerConfig>>(KEYS.CONFIG);
-  if (stored) {
-    if (typeof stored.workDuration !== 'number') delete stored.workDuration;
-    if (typeof stored.shortBreakDuration !== 'number') delete stored.shortBreakDuration;
-    if (typeof stored.longBreakDuration !== 'number') delete stored.longBreakDuration;
-    if (typeof stored.openBreakTab !== 'boolean') delete stored.openBreakTab;
-  }
-  return { ...DEFAULT_CONFIG, ...stored };
-};
+export const getConfig = async (): Promise<TimerConfig> =>
+  (await getStoredValue<TimerConfig>(KEYS.CONFIG)) ?? DEFAULT_CONFIG;
 
 export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
 };
 
-const isQuotaExceededError = (err: unknown): boolean => {
-  if (!(err instanceof Error)) return false;
-  return err.message.toLowerCase().includes('quota') || err.name === 'QuotaExceededError';
+const pruneOldestSessions = (sessions: CompletedSession[]): CompletedSession[] => {
+  const pruneCount = Math.max(1, Math.floor(sessions.length * PRUNE_FACTOR));
+  return sessions.slice(pruneCount);
 };
+
+const capSessions = (sessions: CompletedSession[]): CompletedSession[] =>
+  sessions.length > MAX_SESSIONS ? sessions.slice(sessions.length - MAX_SESSIONS) : sessions;
 
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-
-  // Always cap at MAX_SESSIONS before writing to prevent quota issues
-  const capped = sessions.length >= MAX_SESSIONS ? sessions.slice(sessions.length - MAX_SESSIONS + 1) : sessions;
-  const updated = [...capped, session];
-
+  const toPersist = capSessions([...sessions, session]);
   try {
-    await browser.storage.local.set({ [KEYS.SESSIONS]: updated });
-  } catch (err) {
-    if (!isQuotaExceededError(err)) throw err;
-
-    // Prune oldest sessions and retry
-    const pruned = updated.slice(PRUNE_COUNT);
-    try {
-      await browser.storage.local.set({ [KEYS.SESSIONS]: pruned });
-    } catch (retryErr) {
-      console.error('[tomate] addCompletedSession: storage quota exceeded even after pruning', retryErr);
-    }
+    await browser.storage.local.set({ [KEYS.SESSIONS]: toPersist });
+  } catch (err: unknown) {
+    const isQuota =
+      err instanceof Error &&
+      (err.name === 'QuotaExceededError' || err.message.toLowerCase().includes('quota'));
+    if (!isQuota) throw err;
+    const pruned = pruneOldestSessions(sessions);
+    const retryPersist = capSessions([...pruned, session]);
+    await browser.storage.local.set({ [KEYS.SESSIONS]: retryPersist });
   }
 };
 
@@ -135,11 +123,4 @@ export const getCurrentLabel = async (): Promise<string> =>
 
 export const setCurrentLabel = async (label: string): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CURRENT_LABEL]: label.slice(0, MAX_LABEL_LENGTH) });
-};
-
-export const getBlockedSites = async (): Promise<string[]> =>
-  (await getStoredValue<string[]>(KEYS.BLOCKED_SITES)) ?? [];
-
-export const setBlockedSites = async (sites: string[]): Promise<void> => {
-  await browser.storage.local.set({ [KEYS.BLOCKED_SITES]: sites });
 };

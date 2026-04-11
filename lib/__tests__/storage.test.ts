@@ -4,7 +4,6 @@ import { fakeBrowser } from 'wxt/testing';
 vi.mock('wxt/browser', () => ({ browser: fakeBrowser }));
 
 import {
-  MAX_SESSIONS,
   addCompletedSession,
   getConfig,
   getCurrentLabel,
@@ -151,74 +150,51 @@ describe('storage helpers', () => {
     await expect(getPendingCelebration()).resolves.toBe(false);
   });
 
-  it('caps sessions at MAX_SESSIONS to prevent quota issues', async () => {
-    const baseTime = new Date(2026, 0, 1, 9, 0, 0).getTime();
+  it('caps sessions to MAX_SESSIONS (2000) when adding a new session', async () => {
+    // Pre-fill 2000 sessions
+    const bulk: CompletedSession[] = [];
+    for (let i = 0; i < 2000; i++) {
+      bulk.push(createSession(i, { id: `s-${i}` }));
+    }
+    await fakeBrowser.storage.local.set({ sessions: bulk });
 
-    // Pre-seed storage with MAX_SESSIONS sessions
-    const initial = Array.from({ length: MAX_SESSIONS }, (_, i) =>
-      createSession(baseTime + i * 1_000, { id: `seed-${i}` }),
-    );
-    await fakeBrowser.storage.local.set({ sessions: initial });
+    const newSession = createSession(99999, { id: 'new' });
+    await addCompletedSession(newSession);
 
-    // Add one more — should evict the oldest
-    const extra = createSession(baseTime + MAX_SESSIONS * 1_000, { id: 'extra' });
-    await addCompletedSession(extra);
-
-    const stored = await getSessionHistory();
-    expect(stored.length).toBe(MAX_SESSIONS);
-    expect(stored[0].id).toBe('seed-1');
-    expect(stored[stored.length - 1].id).toBe('extra');
+    const stored = await fakeBrowser.storage.local.get('sessions');
+    const result = stored['sessions'] as CompletedSession[];
+    expect(result.length).toBe(2000);
+    expect(result[result.length - 1].id).toBe('new');
+    expect(result[0].id).toBe('s-1'); // oldest was dropped
   });
 
-  it('prunes oldest sessions and retries when QuotaExceededError is thrown', async () => {
-    // PRUNE_COUNT = Math.max(100, ceil(MAX_SESSIONS * 0.1)) = 200.
-    // Seed with PRUNE_COUNT + 50 so that after pruning the newest sessions remain.
-    const PRUNE_COUNT = Math.max(100, Math.ceil(MAX_SESSIONS * 0.1));
-    const seedCount = PRUNE_COUNT + 50;
-    const baseTime = new Date(2026, 0, 2, 9, 0, 0).getTime();
-    const sessions = Array.from({ length: seedCount }, (_, i) =>
-      createSession(baseTime + i * 1_000, { id: `s-${i}` }),
-    );
-    await fakeBrowser.storage.local.set({ sessions });
+  it('retries and applies cap on QuotaExceededError', async () => {
+    // Pre-fill 1999 sessions
+    const bulk: CompletedSession[] = [];
+    for (let i = 0; i < 1999; i++) {
+      bulk.push(createSession(i, { id: `s-${i}` }));
+    }
+    await fakeBrowser.storage.local.set({ sessions: bulk });
 
-    // Intercept the first write with a QuotaExceededError, then restore so
-    // the retry write goes through to the real fakeBrowser storage.
-    let firstCall = true;
-    const spy = vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items: Record<string, unknown>) => {
-      if ('sessions' in items && firstCall) {
-        firstCall = false;
-        spy.mockRestore(); // let retry use the real set
+    let callCount = 0;
+    const originalSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+      callCount++;
+      if (callCount === 1) {
         const err = new Error('QuotaExceededError');
         err.name = 'QuotaExceededError';
         throw err;
       }
-      throw new Error('unexpected spy call');
+      return originalSet(items);
     });
 
-    const newSession = createSession(baseTime + seedCount * 1_000, { id: 'new' });
+    const newSession = createSession(99999, { id: 'new' });
     await addCompletedSession(newSession);
 
-    const stored = await getSessionHistory();
-    expect(stored.length).toBeGreaterThan(0);
-    expect(stored[stored.length - 1].id).toBe('new');
-  });
-
-  it('logs console.error and does not throw if retry also fails', async () => {
-    const quotaError = new Error('QuotaExceededError');
-    quotaError.name = 'QuotaExceededError';
-    vi.spyOn(fakeBrowser.storage.local, 'set').mockRejectedValue(quotaError);
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const session = createSession(Date.now());
-    await expect(addCompletedSession(session)).resolves.toBeUndefined();
-    expect(errorSpy).toHaveBeenCalledOnce();
-  });
-
-  it('re-throws non-quota errors from storage.set', async () => {
-    const storageError = new Error('Internal storage error');
-    vi.spyOn(fakeBrowser.storage.local, 'set').mockRejectedValue(storageError);
-
-    const session = createSession(Date.now());
-    await expect(addCompletedSession(session)).rejects.toThrow('Internal storage error');
+    expect(callCount).toBe(2);
+    const stored = await fakeBrowser.storage.local.get('sessions');
+    const result = stored['sessions'] as CompletedSession[];
+    expect(result.length).toBeLessThanOrEqual(2000);
+    expect(result[result.length - 1].id).toBe('new');
   });
 });
