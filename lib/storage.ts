@@ -52,9 +52,51 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
 };
 
+const isQuotaError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes('QUOTA_BYTES') ||
+    error.message.includes('QuotaExceededError') ||
+    error.message.includes('quota') ||
+    (error as { name?: string }).name === 'QuotaExceededError'
+  );
+};
+
+const pruneOldestSessions = (sessions: CompletedSession[]): CompletedSession[] => {
+  const pruneCount = Math.max(1, Math.ceil(sessions.length * 0.1));
+  return sessions.slice(pruneCount);
+};
+
+export class StorageQuotaError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StorageQuotaError';
+  }
+}
+
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+
+  try {
+    await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  } catch (error) {
+    if (!isQuotaError(error)) {
+      throw error;
+    }
+
+    // Storage is full — prune oldest 10% of sessions and retry once
+    const pruned = pruneOldestSessions(sessions);
+    try {
+      await browser.storage.local.set({ [KEYS.SESSIONS]: [...pruned, session] });
+    } catch (retryError) {
+      if (isQuotaError(retryError)) {
+        throw new StorageQuotaError(
+          'Storage is full. Session could not be saved even after pruning old sessions.',
+        );
+      }
+      throw retryError;
+    }
+  }
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {

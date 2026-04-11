@@ -12,6 +12,7 @@ import {
   startTimer,
 } from '@/lib/timer';
 import {
+  StorageQuotaError,
   addCompletedSession,
   getConfig,
   getCurrentLabel,
@@ -92,6 +93,18 @@ export default defineBackground(() => {
     await Promise.all([browser.alarms.clear(ALARM_TIMER), browser.alarms.clear(ALARM_BADGE_REFRESH)]);
   };
 
+  const showStorageFullFeedback = async (): Promise<void> => {
+    await badgeApi.setBadgeText({ text: '!' });
+    await badgeApi.setBadgeBackgroundColor({ color: '#B91C1C' });
+    await browser.notifications.create({
+      type: 'basic',
+      iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+      title: 'Storage Full — Session Not Saved',
+      message:
+        'Your tomate session could not be saved because storage is full. Clear some history in settings to free up space.',
+    });
+  };
+
   const persistCompletedSession = async (
     state: Awaited<ReturnType<typeof getTimerState>>,
     endTime: number,
@@ -110,8 +123,16 @@ export default defineBackground(() => {
       duration: state.duration,
     };
 
-    await addCompletedSession(session);
-    await setPendingCelebration(true);
+    try {
+      await addCompletedSession(session);
+      await setPendingCelebration(true);
+    } catch (error) {
+      if (error instanceof StorageQuotaError) {
+        await showStorageFullFeedback();
+      } else {
+        throw error;
+      }
+    }
   };
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
