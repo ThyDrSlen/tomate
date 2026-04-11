@@ -227,8 +227,15 @@ export default defineBackground(() => {
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
-    await setTimerState(completed);
 
+    try {
+      await setTimerState(completed);
+    } catch (err) {
+      console.error('[onAlarm] setTimerState failed — aborting to avoid inconsistent state', err);
+      return;
+    }
+
+    // Only persist session and send notifications after state write succeeded
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
       await browser.notifications.create({
