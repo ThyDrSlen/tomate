@@ -21,10 +21,10 @@ type StatCardProps = {
 
 function StatCard(props: StatCardProps) {
   return (
-    <div class="bg-white rounded-xl p-4 shadow-sm border border-red-100 flex flex-col items-center gap-1">
-      <span class="text-2xl font-bold text-red-600">{props.value}</span>
-      <span class="text-xs text-gray-500 font-medium">{props.label}</span>
-      {props.sublabel && <span class="text-[10px] text-gray-400">{props.sublabel}</span>}
+    <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-red-100 dark:border-red-900 flex flex-col items-center gap-1">
+      <span class="text-2xl font-bold text-red-600 dark:text-red-400">{props.value}</span>
+      <span class="text-xs text-gray-500 dark:text-gray-400 font-medium">{props.label}</span>
+      {props.sublabel && <span class="text-[10px] text-gray-400 dark:text-gray-500">{props.sublabel}</span>}
     </div>
   );
 }
@@ -40,9 +40,9 @@ export default function App() {
   const streak = () => computeStreak(sessions() ?? []);
 
   return (
-    <div class="min-h-screen bg-red-50 py-10 px-4">
+    <div class="min-h-screen bg-red-50 dark:bg-gray-900 py-10 px-4">
       <div class="max-w-[800px] mx-auto">
-        <h1 class="text-2xl font-bold text-red-600 mb-6">Tomate Stats</h1>
+        <h1 class="text-2xl font-bold text-red-600 dark:text-red-400 mb-6">Tomate Stats</h1>
 
         <div class="grid grid-cols-5 gap-3 mb-6">
           <StatCard label="Total tomates" value={total()} />
@@ -59,11 +59,11 @@ export default function App() {
           />
         </div>
 
-        <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">
-          <h2 class="text-sm font-semibold text-gray-700 mb-3">365-day activity</h2>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-red-100 dark:border-red-900">
+          <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">365-day activity</h2>
           <Heatmap days={365} cellSize={14} data={yearData() ?? {}} />
 
-          <div class="flex items-center gap-1 mt-3 text-[10px] text-gray-400">
+          <div class="flex items-center gap-1 mt-3 text-[10px] text-gray-400 dark:text-gray-500">
             <span>Less</span>
             <For each={INTENSITY_LEGEND}>
               {(item) => (
