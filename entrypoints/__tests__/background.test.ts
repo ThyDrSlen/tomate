@@ -8,6 +8,7 @@ import {
   getPendingCelebration,
   getSessionHistory,
   getTimerState,
+  setConfig,
   setCurrentLabel,
   setTimerState,
 } from '@/lib/storage';
@@ -225,6 +226,47 @@ describe('background service worker', () => {
         scheduledTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
       }),
     );
+  });
+
+  it('opens stats tab when WORKING session completes and openBreakTab is true', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    const createTabSpy = vi.spyOn(fakeBrowser.tabs, 'create').mockResolvedValue({} as never);
+    await setConfig(createConfig({ openBreakTab: true }));
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(createTabSpy).toHaveBeenCalledOnce();
+    expect(createTabSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ url: expect.stringContaining('stats.html') }),
+    );
+  });
+
+  it('does not open tab when openBreakTab is false', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    const createTabSpy = vi.spyOn(fakeBrowser.tabs, 'create').mockResolvedValue({} as never);
+    await setConfig(createConfig({ openBreakTab: false }));
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(createTabSpy).not.toHaveBeenCalled();
   });
 
   it('returns the current timer state for GET_STATE', async () => {
