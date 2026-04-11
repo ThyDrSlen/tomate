@@ -50,34 +50,44 @@ export default function App() {
   const [sessions] = createResource(() => getSessionHistory());
   const [todayCount] = createResource(() => getTodayCount());
 
-  const total = () => computeTotalCount(sessions() ?? []);
-  const week = () => computeWeekCount(sessions() ?? []);
-  const bestDay = () => computeBestDay(sessions() ?? []);
-  const streak = () => computeStreak(sessions() ?? []);
+  const hasError = () => !!(sessions.error || yearData.error || todayCount.error);
+  const sessionList = () => sessions() ?? [];
+
+  const total = () => computeTotalCount(sessionList());
+  const week = () => computeWeekCount(sessionList());
+  const bestDay = () => computeBestDay(sessionList());
+  const streak = () => computeStreak(sessionList());
 
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
       <div class="max-w-[800px] mx-auto">
         <div class="flex items-center justify-between mb-6">
           <h1 class="text-2xl font-bold text-red-600">Tomate Stats</h1>
-          <Show when={(sessions() ?? []).length > 0}>
+          <Show when={sessionList().length > 0 && !hasError()}>
             <button
               class="text-sm px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-100 transition-colors"
-              onClick={() => exportCSV(sessions() ?? [])}
+              onClick={() => exportCSV(sessionList())}
             >
               Export CSV
             </button>
           </Show>
         </div>
 
-        <Show when={(sessions() ?? []).length === 0}>
+        <Show when={hasError()}>
+          <div class="text-center py-8 text-red-500">
+            <p class="text-lg font-medium">Failed to load stats</p>
+            <p class="text-sm mt-1">Please close and reopen this page. If the problem persists, check your browser storage.</p>
+          </div>
+        </Show>
+
+        <Show when={!hasError() && sessionList().length === 0}>
           <div class="text-center py-8 text-gray-500 dark:text-gray-400">
             <p class="text-lg">No sessions yet</p>
             <p class="text-sm mt-1">Complete your first Pomodoro to see your stats here.</p>
           </div>
         </Show>
 
-        <Show when={(sessions() ?? []).length > 0}>
+        <Show when={!hasError() && sessionList().length > 0}>
           <div class="grid grid-cols-5 gap-3 mb-6">
             <StatCard label="Total tomates" value={total()} />
             <StatCard label="Today" value={todayCount() ?? 0} />

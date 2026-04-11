@@ -12,6 +12,7 @@ export default function App() {
   const [longBreak, setLongBreak] = createSignal(30);
   const [openBreakTab, setOpenBreakTab] = createSignal(true);
   const [saved, setSaved] = createSignal(false);
+  const [saveError, setSaveError] = createSignal('');
 
   onMount(async () => {
     const config = await getConfig();
@@ -22,16 +23,22 @@ export default function App() {
   });
 
   const handleSave = async () => {
+    setSaveError('');
     const config: TimerConfig = {
       workDuration: work() * MS_PER_MINUTE,
       shortBreakDuration: shortBreak() * MS_PER_MINUTE,
       longBreakDuration: longBreak() * MS_PER_MINUTE,
       openBreakTab: openBreakTab(),
     };
-    await setConfig(config);
-    await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await setConfig(config);
+      await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error('[tomate] settings save failed:', err);
+      setSaveError('Save failed. Please try again.');
+    }
   };
 
   const handleReset = () => {
@@ -113,6 +120,9 @@ export default function App() {
 
           <Show when={saved()}>
             <span class="text-sm text-green-600">Settings saved ✓</span>
+          </Show>
+          <Show when={saveError()}>
+            <span class="text-sm text-red-600">{saveError()}</span>
           </Show>
         </div>
       </div>
