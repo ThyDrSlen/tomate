@@ -29,11 +29,13 @@ const createConfig = (overrides: Partial<TimerConfig> = {}): TimerConfig => ({
   ...overrides,
 });
 
+let testId = 0;
+
 const initBackground = async (): Promise<void> => {
   (globalThis as typeof globalThis & { defineBackground: (main?: () => void | Promise<void>) => { main?: () => void | Promise<void> } }).defineBackground =
     (main) => ({ main });
 
-  const background = (await import(`../background?test=${Math.random()}`)) as BackgroundModule;
+  const background = (await import(`../background?test=${testId++}`)) as BackgroundModule;
   await background.default.main?.();
 };
 
@@ -238,6 +240,56 @@ describe('background service worker', () => {
     await initBackground();
 
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
+  });
+
+  it('rejects UPDATE_CONFIG with zero workDuration and keeps the current state', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    const workingState = createState({
+      phase: 'WORKING',
+      startTime: 5_000,
+      endTime: 15_000,
+      duration: 10_000,
+    });
+    await setTimerState(workingState);
+    await initBackground();
+
+    const badConfig = createConfig({ workDuration: 0 });
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
+
+    // State should be unchanged — the invalid config is rejected
+    expect(response).toEqual(workingState);
+    // Config in storage should NOT have been overwritten
+    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
+  });
+
+  it('rejects UPDATE_CONFIG with negative shortBreakDuration', async () => {
+    await initBackground();
+
+    const badConfig = createConfig({ shortBreakDuration: -5_000 });
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
+
+    expect(response).toEqual(createState());
+    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
+  });
+
+  it('rejects UPDATE_CONFIG with NaN longBreakDuration', async () => {
+    await initBackground();
+
+    const badConfig = createConfig({ longBreakDuration: NaN });
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
+
+    expect(response).toEqual(createState());
+    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
+  });
+
+  it('rejects UPDATE_CONFIG with Infinity workDuration', async () => {
+    await initBackground();
+
+    const badConfig = createConfig({ workDuration: Infinity });
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
+
+    expect(response).toEqual(createState());
+    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
   });
 
   it('updates config during an active timer and recreates the timer alarm', async () => {
