@@ -200,6 +200,7 @@ export default defineBackground(() => {
         return nextState;
       }
       default: {
+        console.warn('[tomate] Unknown action:', (message as any).action);
         return state;
       }
     }
