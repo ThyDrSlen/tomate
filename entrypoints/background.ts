@@ -140,68 +140,73 @@ export default defineBackground(() => {
   };
 
   const handleMessage = async (message: MessageAction) => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    try {
+      const [state, config] = await Promise.all([getTimerState(), getConfig()]);
 
-    switch (message.action) {
-      case 'START_TIMER': {
-        const nextState = startTimer(state, config);
-        await setTimerState(nextState);
+      switch (message.action) {
+        case 'START_TIMER': {
+          const nextState = startTimer(state, config);
+          await setTimerState(nextState);
 
-        if (nextState.endTime !== null) {
-          await scheduleTimerAlarm(nextState.endTime);
-          await startBadgeRefresh();
+          if (nextState.endTime !== null) {
+            await scheduleTimerAlarm(nextState.endTime);
+            await startBadgeRefresh();
+          }
+
+          await refreshBadge();
+          return nextState;
         }
-
-        await refreshBadge();
-        return nextState;
-      }
-      case 'ABANDON_TIMER': {
-        const nextState = abandonTimer(state);
-        await setTimerState(nextState);
-        await clearActiveAlarms();
-        await refreshBadge();
-        return nextState;
-      }
-      case 'GET_STATE': {
-        return state;
-      }
-      case 'ACCEPT_LONG_BREAK': {
-        const nextState = acceptLongBreak(state, config);
-        await setTimerState(nextState);
-
-        if (nextState.endTime !== null) {
-          await scheduleTimerAlarm(nextState.endTime);
-          await startBadgeRefresh();
-        }
-
-        await refreshBadge();
-        return nextState;
-      }
-      case 'SKIP_LONG_BREAK': {
-        const nextState = skipLongBreak(state);
-        await setTimerState(nextState);
-        await clearActiveAlarms();
-        await refreshBadge();
-        return nextState;
-      }
-      case 'UPDATE_CONFIG': {
-        await setConfig(message.config);
-        const nextState = adjustDuration(state, message.config);
-        await setTimerState(nextState);
-
-        if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
-          await scheduleTimerAlarm(nextState.endTime);
-          await startBadgeRefresh();
-        } else {
+        case 'ABANDON_TIMER': {
+          const nextState = abandonTimer(state);
+          await setTimerState(nextState);
           await clearActiveAlarms();
+          await refreshBadge();
+          return nextState;
         }
+        case 'GET_STATE': {
+          return state;
+        }
+        case 'ACCEPT_LONG_BREAK': {
+          const nextState = acceptLongBreak(state, config);
+          await setTimerState(nextState);
 
-        await refreshBadge();
-        return nextState;
+          if (nextState.endTime !== null) {
+            await scheduleTimerAlarm(nextState.endTime);
+            await startBadgeRefresh();
+          }
+
+          await refreshBadge();
+          return nextState;
+        }
+        case 'SKIP_LONG_BREAK': {
+          const nextState = skipLongBreak(state);
+          await setTimerState(nextState);
+          await clearActiveAlarms();
+          await refreshBadge();
+          return nextState;
+        }
+        case 'UPDATE_CONFIG': {
+          await setConfig(message.config);
+          const nextState = adjustDuration(state, message.config);
+          await setTimerState(nextState);
+
+          if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
+            await scheduleTimerAlarm(nextState.endTime);
+            await startBadgeRefresh();
+          } else {
+            await clearActiveAlarms();
+          }
+
+          await refreshBadge();
+          return nextState;
+        }
+        default: {
+          return state;
+        }
       }
-      default: {
-        return state;
-      }
+    } catch (err) {
+      console.error('[handleMessage] failed for action "%s":', message.action, err);
+      return { error: true, message: err instanceof Error ? err.message : String(err) };
     }
   };
 
