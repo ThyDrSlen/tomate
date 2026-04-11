@@ -11,6 +11,7 @@ export default function App() {
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
   const [saved, setSaved] = createSignal(false);
+  const [showResetConfirm, setShowResetConfirm] = createSignal(false);
 
   onMount(async () => {
     const config = await getConfig();
@@ -31,10 +32,11 @@ export default function App() {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleReset = () => {
+  const handleResetConfirm = () => {
     setWork(Math.round(DEFAULT_CONFIG.workDuration / MS_PER_MINUTE));
     setShortBreak(Math.round(DEFAULT_CONFIG.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
+    setShowResetConfirm(false);
   };
 
   return (
@@ -89,13 +91,36 @@ export default function App() {
             Save
           </button>
 
-          <button
-            type="button"
-            onClick={handleReset}
-            class="text-sm text-gray-500 hover:text-gray-700 underline"
+          <Show
+            when={showResetConfirm()}
+            fallback={
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(true)}
+                class="text-sm text-gray-500 hover:text-gray-700 underline"
+              >
+                Reset to defaults
+              </button>
+            }
           >
-            Reset to defaults
-          </button>
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-amber-700">Reset all settings?</span>
+              <button
+                type="button"
+                onClick={handleResetConfirm}
+                class="text-sm bg-amber-600 text-white px-2 py-1 rounded hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-1"
+              >
+                Confirm
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(false)}
+                class="text-sm text-gray-500 hover:text-gray-700 underline"
+              >
+                Cancel
+              </button>
+            </div>
+          </Show>
 
           <Show when={saved()}>
             <span class="text-sm text-green-600">Settings saved ✓</span>
