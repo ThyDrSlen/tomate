@@ -76,16 +76,18 @@ export default function Heatmap(props: HeatmapProps) {
 
   const columns = createMemo(() => {
     const cells = grid();
-    const cols: (HeatmapCell | null)[][] = [];
-    let currentCol: (HeatmapCell | null)[] = Array(7).fill(null);
+    if (cells.length === 0) return [];
 
-    const firstRow = cells.length > 0 ? toMonRow(cells[0].dayOfWeek) : 0;
-    for (let r = 0; r < firstRow; r++) {
-      currentCol[r] = null;
-    }
+    const cols: (HeatmapCell | null)[][] = [];
+    // Each column is a 7-element array (Mon–Sun). Slots for days before the
+    // first cell stay null so the grid rows align with the day-of-week axis.
+    // Array(7).fill(null) pre-fills all spacer positions — no extra loop needed.
+    let currentCol: (HeatmapCell | null)[] = Array(7).fill(null);
 
     for (const cell of cells) {
       const row = toMonRow(cell.dayOfWeek);
+      // A new Monday starts a new week column (only if the current one is non-empty,
+      // which avoids a spurious push when the very first cell lands on Monday).
       if (row === 0 && currentCol.some((c) => c !== null)) {
         cols.push(currentCol);
         currentCol = Array(7).fill(null);
@@ -93,6 +95,7 @@ export default function Heatmap(props: HeatmapProps) {
       currentCol[row] = cell;
     }
 
+    // Flush the last (possibly partial) column.
     if (currentCol.some((c) => c !== null)) {
       cols.push(currentCol);
     }
