@@ -19,12 +19,22 @@ import TaskLabel from '@/components/TaskLabel';
 import TodayCount from '@/components/TodayCount';
 import Heatmap from '@/components/Heatmap';
 
+/** Map each phase to the id of the primary action button for that phase. */
+const PHASE_PRIMARY_BTN: Record<string, string> = {
+  IDLE: 'start-btn',
+  WORKING: 'abandon-btn',
+  SHORT_BREAK: 'skip-break-btn',
+  LONG_BREAK: 'skip-break-btn',
+  BREAK_SUGGESTION: 'accept-break-btn',
+};
+
 export default function App() {
   const [state, setState] = createSignal<TimerState>(INITIAL_STATE);
   const [remaining, setRemaining] = createSignal(0);
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [actionError, setActionError] = createSignal<string | null>(null);
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
@@ -60,6 +70,18 @@ export default function App() {
     }
   });
 
+  // Issue #49 — move focus to the primary action button on phase transitions
+  createEffect(() => {
+    const phase = state().phase;
+    const btnId = PHASE_PRIMARY_BTN[phase];
+    if (!btnId) return;
+    // Use queueMicrotask so SolidJS has finished rendering the new DOM before we focus
+    queueMicrotask(() => {
+      const btn = document.getElementById(btnId) as HTMLElement | null;
+      btn?.focus();
+    });
+  });
+
   const formatTime = () => {
     const ms = remaining();
     const totalSeconds = Math.ceil(ms / 1000);
@@ -74,25 +96,25 @@ export default function App() {
     return 1 - remaining() / s.duration;
   };
 
-  const startTimer = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'START_TIMER' });
-    setState(newState as TimerState);
+  /** Send an action to the background service worker and update state.
+   *  Errors are logged and surfaced briefly to the user (#16). */
+  const sendAction = async (action: string) => {
+    setActionError(null);
+    try {
+      const newState = await browser.runtime.sendMessage({ action });
+      setState(newState as TimerState);
+    } catch (err) {
+      console.warn(`[Tomate] sendAction(${action}) failed:`, err);
+      setActionError('Could not reach background. Please try again.');
+      // Auto-clear the error after 3 s so it doesn't linger
+      setTimeout(() => setActionError(null), 3000);
+    }
   };
 
-  const abandonTimer = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'ABANDON_TIMER' });
-    setState(newState as TimerState);
-  };
-
-  const acceptLongBreak = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
-    setState(newState as TimerState);
-  };
-
-  const skipLongBreak = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
-    setState(newState as TimerState);
-  };
+  const startTimer = () => sendAction('START_TIMER');
+  const abandonTimer = () => sendAction('ABANDON_TIMER');
+  const acceptLongBreak = () => sendAction('ACCEPT_LONG_BREAK');
+  const skipLongBreak = () => sendAction('SKIP_LONG_BREAK');
 
   let labelTimeout: ReturnType<typeof setTimeout>;
   const handleLabelChange = (value: string) => {
@@ -129,6 +151,10 @@ export default function App() {
       </div>
 
       <TaskLabel value={label()} onChange={handleLabelChange} />
+
+      {actionError() && (
+        <p role="alert" class="text-xs text-red-500 mt-1">{actionError()}</p>
+      )}
 
       <Controls
         phase={state().phase}
