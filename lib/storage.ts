@@ -54,6 +54,9 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
 
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  if (sessions.some((s) => s.id === session.id)) {
+    return;
+  }
   await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
 };
 

@@ -32,6 +32,10 @@ export type MessageAction =
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
 
+// Module-level set to guard against the same alarm firing twice within a short window
+// (e.g. service worker recovery, browser scheduling jitter).
+const recentlyHandledAlarms = new Set<string>();
+
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
   const ALARM_BADGE_REFRESH = 'badge-refresh';
@@ -102,7 +106,9 @@ export default defineBackground(() => {
 
     const label = await getCurrentLabel();
     const session: CompletedSession = {
-      id: crypto.randomUUID(),
+      // Derive a deterministic ID from startTime so that duplicate alarm fires
+      // for the same session produce the same ID and are deduplicated in storage.
+      id: `session-${state.startTime}`,
       label,
       startTime: state.startTime,
       endTime,
@@ -243,6 +249,15 @@ export default defineBackground(() => {
     if (alarm.name !== ALARM_TIMER) {
       return;
     }
+
+    // Fast in-memory idempotency guard: if the same alarm fires again within
+    // 5 seconds (service worker restart, clock jitter, etc.) skip it.
+    const alarmKey = `${alarm.name}:${alarm.scheduledTime}`;
+    if (recentlyHandledAlarms.has(alarmKey)) {
+      return;
+    }
+    recentlyHandledAlarms.add(alarmKey);
+    setTimeout(() => recentlyHandledAlarms.delete(alarmKey), 5_000);
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
