@@ -94,6 +94,38 @@ export default function App() {
     setState(newState as TimerState);
   };
 
+  onMount(() => {
+    const handleKeydown = (e: KeyboardEvent) => {
+      // Don't fire when focus is inside a text input (e.g. TaskLabel)
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      const phase = state().phase;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (phase === 'IDLE') {
+          startTimer();
+        } else if (phase === 'BREAK_SUGGESTION') {
+          acceptLongBreak();
+        }
+      } else if (e.code === 'Escape') {
+        if (phase === 'WORKING') {
+          abandonTimer();
+        }
+      } else if (e.key === 's' || e.key === 'S') {
+        if (phase === 'BREAK_SUGGESTION' || phase === 'SHORT_BREAK') {
+          skipLongBreak();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeydown);
+    onCleanup(() => document.removeEventListener('keydown', handleKeydown));
+  });
+
   let labelTimeout: ReturnType<typeof setTimeout>;
   const handleLabelChange = (value: string) => {
     setLabel(value);
