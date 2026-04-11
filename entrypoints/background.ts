@@ -106,7 +106,7 @@ export default defineBackground(() => {
       label,
       startTime: state.startTime,
       endTime,
-      date: toDateKey(state.startTime),
+      date: toDateKey(endTime),
       duration: state.duration,
     };
 

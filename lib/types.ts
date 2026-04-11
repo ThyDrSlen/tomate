@@ -21,6 +21,7 @@ export type CompletedSession = {
   label: string;
   startTime: number;
   endTime: number;
+  /** Local calendar date (YYYY-MM-DD) of session completion, derived from endTime. */
   date: string;
   duration: number;
 };
