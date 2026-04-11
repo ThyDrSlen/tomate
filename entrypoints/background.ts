@@ -215,6 +215,8 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
 
+  const recentlyHandledAlarms = new Set<string>();
+
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
       await refreshBadge();
@@ -224,6 +226,13 @@ export default defineBackground(() => {
     if (alarm.name !== ALARM_TIMER) {
       return;
     }
+
+    const dedupeKey = `${alarm.name}:${Math.floor(alarm.scheduledTime / 5000)}`;
+    if (recentlyHandledAlarms.has(dedupeKey)) {
+      return;
+    }
+    recentlyHandledAlarms.add(dedupeKey);
+    setTimeout(() => recentlyHandledAlarms.delete(dedupeKey), 10_000);
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
