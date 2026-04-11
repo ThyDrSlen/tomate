@@ -115,7 +115,7 @@ export default function App() {
         </button>
       </div>
 
-      <TimerRing progress={progress()} phase={state().phase} />
+      <TimerRing progress={progress()} phase={state().phase} timeLabel={formatTime()} />
       <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
       <div class="text-sm text-gray-500 mt-1">

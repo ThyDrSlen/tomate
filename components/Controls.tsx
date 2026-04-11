@@ -17,6 +17,7 @@ export default function Controls(props: ControlsProps) {
           <button
             type="button"
             onClick={props.onStart}
+            aria-label="Start a focus session"
             class="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 active:bg-red-800 transition-colors"
           >
             Start
@@ -26,6 +27,7 @@ export default function Controls(props: ControlsProps) {
           <button
             type="button"
             onClick={props.onAbandon}
+            aria-label="Abandon the current focus session"
             class="px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
           >
             Abandon
@@ -35,6 +37,7 @@ export default function Controls(props: ControlsProps) {
           <button
             type="button"
             onClick={props.onAbandon}
+            aria-label="Skip the current break and return to idle"
             class="px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
           >
             Skip Break
@@ -44,6 +47,7 @@ export default function Controls(props: ControlsProps) {
           <button
             type="button"
             onClick={props.onAcceptLongBreak}
+            aria-label="Start a long break (you've earned it!)"
             class="px-5 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors"
           >
             Long Break
@@ -51,6 +55,7 @@ export default function Controls(props: ControlsProps) {
           <button
             type="button"
             onClick={props.onSkipLongBreak}
+            aria-label="Skip the long break and return to idle"
             class="px-5 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
           >
             Skip
