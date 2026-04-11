@@ -1,9 +1,10 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
-import { browser, type Browser } from 'wxt/browser';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
+import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
 import {
+  getConfig,
   getPendingCelebration,
   setPendingCelebration,
   getCurrentLabel,
@@ -11,7 +12,7 @@ import {
   getTodayCount,
   getHeatmapData,
 } from '@/lib/storage';
-import { INITIAL_STATE, type TimerState } from '@/lib/types';
+import { DEFAULT_CONFIG, INITIAL_STATE, type TimerConfig, type TimerState } from '@/lib/types';
 
 import TimerRing from '@/components/TimerRing';
 import Controls from '@/components/Controls';
@@ -25,30 +26,58 @@ export default function App() {
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [config, setConfig] = createSignal<TimerConfig>(DEFAULT_CONFIG);
+  const [goalReached, setGoalReached] = createSignal(false);
 
   const refreshStats = async () => {
-    setTodayCount(await getTodayCount());
+    const prev = todayCount();
+    const next = await getTodayCount();
+    setTodayCount(next);
     setHeatmapData(await getHeatmapData(120));
+    // Show goal-reached toast when count crosses the daily goal threshold (#196)
+    const goal = config().dailyGoal;
+    if (goal > 0 && prev < goal && next >= goal) {
+      setGoalReached(true);
+      playCelebration('milestone', config().playCompletionSound !== false);
+      setTimeout(() => setGoalReached(false), 6000);
+    }
   };
 
+  const [connectionError, setConnectionError] = createSignal(false);
+
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    let currentState: TimerState;
+    try {
+      // Wrap GET_STATE with a 5-second timeout so the popup doesn't hang
+      // if the background service worker is unresponsive (#197)
+      currentState = await Promise.race([
+        browser.runtime.sendMessage({ action: 'GET_STATE' }) as Promise<TimerState>,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('GET_STATE timeout')), 5000),
+        ),
+      ]);
+    } catch (err) {
+      console.warn('[tomate] GET_STATE failed or timed out, falling back to stored state', err);
+      setConnectionError(true);
+      const { getTimerState } = await import('@/lib/storage');
+      currentState = await getTimerState();
+    }
+    setState(currentState);
+
+    const loadedConfig = await getConfig();
+    setConfig(loadedConfig);
 
     const pending = await getPendingCelebration();
     if (pending) {
-      playCelebration('work');
+      // Respect user's sound preference (#105)
+      playCelebration('work', loadedConfig.playCompletionSound !== false);
       await setPendingCelebration(false);
     }
-
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    const onStorageChanged = (_changes: Record<string, Browser.storage.StorageChange>): void => {
-      void refreshStats();
-    };
-    browser.storage.onChanged.addListener(onStorageChanged);
-    onCleanup(() => browser.storage.onChanged.removeListener(onStorageChanged));
+    browser.storage.onChanged.addListener(refreshStats);
+    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
   });
 
   createEffect(() => {
@@ -61,16 +90,6 @@ export default function App() {
     } else {
       setRemaining(0);
     }
-  });
-
-  // Move keyboard focus to the primary action button on each phase transition (#49)
-  createEffect(() => {
-    // Access phase to track changes
-    state().phase;
-    queueMicrotask(() => {
-      const btn = document.querySelector<HTMLElement>('[data-focus-target]');
-      btn?.focus();
-    });
   });
 
   const formatTime = () => {
@@ -128,7 +147,23 @@ export default function App() {
         </button>
       </div>
 
-      <TimerRing progress={progress()} phase={state().phase} />
+      <Show when={connectionError()}>
+        <div class="w-full mb-2 px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700 text-center">
+          Could not connect to timer — showing last known state
+        </div>
+      </Show>
+
+      <Show when={goalReached()}>
+        <div
+          role="status"
+          aria-live="polite"
+          class="w-full mb-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700 text-center font-medium"
+        >
+          You've reached today's goal! Keep it up!
+        </div>
+      </Show>
+
+      <TimerRing progress={progress()} phase={state().phase} timeLabel={formatTime()} />
       <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
       <div class="text-sm text-gray-500 mt-1">
