@@ -27,21 +27,26 @@ export default function App() {
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
 
   const refreshStats = async () => {
-    setTodayCount(await getTodayCount());
-    setHeatmapData(await getHeatmapData(120));
+    const [count, heatmap] = await Promise.all([getTodayCount(), getHeatmapData(120)]);
+    setTodayCount(count);
+    setHeatmapData(heatmap);
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
+    const [currentState, pending, currentLabel] = await Promise.all([
+      browser.runtime.sendMessage({ action: 'GET_STATE' }),
+      getPendingCelebration(),
+      getCurrentLabel(),
+    ]);
+
     setState(currentState as TimerState);
 
-    const pending = await getPendingCelebration();
     if (pending) {
       playCelebration('work');
       await setPendingCelebration(false);
     }
 
-    setLabel(await getCurrentLabel());
+    setLabel(currentLabel);
     await refreshStats();
 
     browser.storage.onChanged.addListener(refreshStats);
