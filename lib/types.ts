@@ -5,6 +5,10 @@ export type TimerConfig = {
   shortBreakDuration: number;
   longBreakDuration: number;
   openBreakTab: boolean;
+  /** Play the completion sound when a work session finishes (#105) */
+  playCompletionSound: boolean;
+  /** Daily tomate goal — shows celebration toast when reached (#196) */
+  dailyGoal: number;
 };
 
 export type TimerState = {
@@ -31,6 +35,8 @@ export const DEFAULT_CONFIG: TimerConfig = {
   shortBreakDuration: 5 * 60 * 1000,
   longBreakDuration: 30 * 60 * 1000,
   openBreakTab: true,
+  playCompletionSound: true,
+  dailyGoal: 8,
 };
 
 export const INITIAL_STATE: TimerState = {
