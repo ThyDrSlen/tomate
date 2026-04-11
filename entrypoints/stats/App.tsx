@@ -1,7 +1,6 @@
-import { createMemo, createResource, For, Show } from 'solid-js';
-import { browser } from 'wxt/browser';
+import { createResource, For, Show } from 'solid-js';
 
-import { getSessionsForYear, getHeatmapData, getTodayCount } from '@/lib/storage';
+import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
 
 import Heatmap from '@/components/Heatmap';
@@ -47,80 +46,98 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
 }
 
 export default function App() {
-  const currentYear = new Date().getFullYear();
-
   const [yearData] = createResource(() => getHeatmapData(365));
-  const [sessions] = createResource(() => getSessionsForYear(currentYear));
+  const [sessions] = createResource(() => getSessionHistory());
   const [todayCount] = createResource(() => getTodayCount());
 
-  const sessionList = () => sessions() ?? [];
-  const sessionDateSet = createMemo(() => new Set(sessionList().map((s) => s.date)));
-
-  const statsData = createMemo(() => ({
-    total: computeTotalCount(sessionList()),
-    week: computeWeekCount(sessionList()),
-    best: computeBestDay(sessionList()),
-    streak: computeStreak(sessionList(), sessionDateSet()),
-  }));
-
-  const stableYearData = createMemo(() => yearData() ?? {});
+  const total = () => computeTotalCount(sessions() ?? []);
+  const week = () => computeWeekCount(sessions() ?? []);
+  const bestDay = () => computeBestDay(sessions() ?? []);
+  const streak = () => computeStreak(sessions() ?? []);
 
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
       <div class="max-w-[800px] mx-auto">
         <div class="flex items-center justify-between mb-6">
-          <h1 class="text-2xl font-bold text-red-600">{browser.i18n.getMessage('statsTitle') || 'Tomate Stats'}</h1>
-          <Show when={sessionList().length > 0}>
+          <h1 class="text-2xl font-bold text-red-600">Tomate Stats</h1>
+          <Show when={(sessions() ?? []).length > 0}>
             <button
               class="text-sm px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-100 transition-colors"
-              onClick={() => exportCSV(sessionList())}
+              onClick={() => exportCSV(sessions() ?? [])}
             >
-              {browser.i18n.getMessage('statsExportCSV') || 'Export CSV'}
+              Export CSV
             </button>
           </Show>
         </div>
 
-        <Show when={sessionList().length === 0}>
-          <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-            <p class="text-lg">{browser.i18n.getMessage('statsNoSessions') || 'No sessions yet'}</p>
-            <p class="text-sm mt-1">{browser.i18n.getMessage('statsNoSessionsHint') || 'Complete your first Pomodoro to see your stats here.'}</p>
-          </div>
-        </Show>
-
-        <Show when={sessionList().length > 0}>
-          <div class="grid grid-cols-5 gap-3 mb-6">
-            <StatCard label={browser.i18n.getMessage('statLabelTotal') || 'Total tomates'} value={statsData().total} />
-            <StatCard label={browser.i18n.getMessage('statLabelToday') || 'Today'} value={todayCount() ?? 0} />
-            <StatCard label={browser.i18n.getMessage('statLabelWeek') || 'This week'} value={statsData().week} />
-            <StatCard
-              label={browser.i18n.getMessage('statLabelBestDay') || 'Best day'}
-              value={statsData().best?.count ?? '—'}
-              sublabel={statsData().best?.date}
-            />
-            <StatCard
-              label={browser.i18n.getMessage('statLabelStreak') || 'Current streak'}
-              value={`${statsData().streak}d`}
-            />
-          </div>
-
-          <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">
-            <h2 class="text-sm font-semibold text-gray-700 mb-3">{browser.i18n.getMessage('statsActivityTitle') || '365-day activity'}</h2>
-            <Heatmap days={365} cellSize={14} data={stableYearData()} />
-
-            <div class="flex items-center gap-1 mt-3 text-[10px] text-gray-400">
-              <span>{browser.i18n.getMessage('statsLegendLess') || 'Less'}</span>
-              <For each={INTENSITY_LEGEND}>
-                {(item) => (
-                  <div
-                    class="w-3 h-3 rounded-sm"
-                    style={{ "background-color": item.color }}
-                    title={item.label}
-                  />
-                )}
-              </For>
-              <span>{browser.i18n.getMessage('statsLegendMore') || 'More'}</span>
+        {/* Loading skeleton while sessions fetch */}
+        <Show
+          when={!sessions.loading}
+          fallback={
+            <div>
+              <div class="grid grid-cols-5 gap-3 mb-6">
+                <For each={Array(5).fill(null)}>
+                  {() => (
+                    <div class="bg-white rounded-xl p-4 shadow-sm border border-red-100 h-24 animate-pulse" />
+                  )}
+                </For>
+              </div>
+              <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100 h-40 animate-pulse" />
             </div>
-          </div>
+          }
+        >
+          <Show when={(sessions() ?? []).length === 0}>
+            <div class="text-center py-8 text-gray-500">
+              <p class="text-lg">No sessions yet</p>
+              <p class="text-sm mt-1">Complete your first Pomodoro to see your stats here.</p>
+            </div>
+          </Show>
+
+          <Show when={(sessions() ?? []).length > 0}>
+            <div class="grid grid-cols-5 gap-3 mb-6">
+              <Show
+                when={!todayCount.loading}
+                fallback={<div class="bg-white rounded-xl h-24 animate-pulse border border-red-100" />}
+              >
+                <StatCard label="Total tomates" value={total()} />
+                <StatCard label="Today" value={todayCount() ?? 0} />
+                <StatCard label="This week" value={week()} />
+                <StatCard
+                  label="Best day"
+                  value={bestDay()?.count ?? '—'}
+                  sublabel={bestDay()?.date}
+                />
+                <StatCard
+                  label="Current streak"
+                  value={`${streak()}d`}
+                />
+              </Show>
+            </div>
+
+            <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">
+              <h2 class="text-sm font-semibold text-gray-700 mb-3">365-day activity</h2>
+              <Show
+                when={!yearData.loading}
+                fallback={<div class="h-32 animate-pulse bg-gray-100 rounded-lg" />}
+              >
+                <Heatmap days={365} cellSize={14} data={yearData() ?? {}} />
+              </Show>
+
+              <div class="flex items-center gap-1 mt-3 text-[10px] text-gray-400">
+                <span>Less</span>
+                <For each={INTENSITY_LEGEND}>
+                  {(item) => (
+                    <div
+                      class="w-3 h-3 rounded-sm"
+                      style={{ "background-color": item.color }}
+                      title={item.label}
+                    />
+                  )}
+                </For>
+                <span>More</span>
+              </div>
+            </div>
+          </Show>
         </Show>
       </div>
     </div>

@@ -1,5 +1,5 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
-import { browser } from 'wxt/browser';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { browser, type Browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
@@ -25,26 +25,15 @@ export default function App() {
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
-  const [loadError, setLoadError] = createSignal(false);
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
     setHeatmapData(await getHeatmapData(120));
   };
 
-  const loadState = async () => {
-    setLoadError(false);
-    try {
-      const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-      if (!currentState) throw new Error('No state returned');
-      setState(currentState as TimerState);
-    } catch {
-      setLoadError(true);
-    }
-  };
-
   onMount(async () => {
-    await loadState();
+    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
+    setState(currentState as TimerState);
 
     const pending = await getPendingCelebration();
     if (pending) {
@@ -55,8 +44,11 @@ export default function App() {
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const onStorageChanged = (_changes: Record<string, Browser.storage.StorageChange>): void => {
+      void refreshStats();
+    };
+    browser.storage.onChanged.addListener(onStorageChanged);
+    onCleanup(() => browser.storage.onChanged.removeListener(onStorageChanged));
   });
 
   createEffect(() => {
@@ -69,6 +61,16 @@ export default function App() {
     } else {
       setRemaining(0);
     }
+  });
+
+  // Move keyboard focus to the primary action button on each phase transition (#49)
+  createEffect(() => {
+    // Access phase to track changes
+    state().phase;
+    queueMicrotask(() => {
+      const btn = document.querySelector<HTMLElement>('[data-focus-target]');
+      btn?.focus();
+    });
   });
 
   const formatTime = () => {
@@ -120,36 +122,22 @@ export default function App() {
           type="button"
           onClick={() => browser.runtime.openOptionsPage()}
           class="text-gray-400 hover:text-gray-600 text-lg"
-          aria-label={browser.i18n.getMessage('settingsAriaLabel') || 'Open settings to configure timer durations'}
-          title={browser.i18n.getMessage('settingsAriaLabel') || 'Open settings to configure timer durations'}
+          aria-label="Settings"
         >
           ⚙️
         </button>
       </div>
-
-      <Show when={loadError()}>
-        <div class="w-full mb-3 flex items-center justify-between rounded bg-yellow-100 px-3 py-2 text-sm text-yellow-800">
-          <span>{browser.i18n.getMessage('reconnecting') || 'Reconnecting…'}</span>
-          <button
-            type="button"
-            onClick={loadState}
-            class="ml-2 rounded bg-yellow-200 px-2 py-0.5 text-xs font-medium hover:bg-yellow-300"
-          >
-            {browser.i18n.getMessage('retry') || 'Retry'}
-          </button>
-        </div>
-      </Show>
 
       <TimerRing progress={progress()} phase={state().phase} />
       <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
       <div class="text-sm text-gray-500 mt-1">
         <Switch>
-          <Match when={state().phase === 'IDLE'}>{browser.i18n.getMessage('phaseIdle') || 'Ready to focus'}</Match>
-          <Match when={state().phase === 'WORKING'}>{browser.i18n.getMessage('phaseWorking') || 'Working'}</Match>
-          <Match when={state().phase === 'SHORT_BREAK'}>{browser.i18n.getMessage('phaseShortBreak') || 'Short Break'}</Match>
-          <Match when={state().phase === 'LONG_BREAK'}>{browser.i18n.getMessage('phaseLongBreak') || 'Long Break'}</Match>
-          <Match when={state().phase === 'BREAK_SUGGESTION'}>{browser.i18n.getMessage('phaseBreakSuggestion') || 'Time for a long break!'}</Match>
+          <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
+          <Match when={state().phase === 'WORKING'}>Working</Match>
+          <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
+          <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
+          <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
         </Switch>
       </div>
 
@@ -167,9 +155,6 @@ export default function App() {
 
       <div class="mt-2 w-full">
         <Heatmap days={120} data={heatmapData()} />
-        <Show when={Object.keys(heatmapData()).length === 0}>
-          <p class="mt-1 text-center text-xs text-gray-400">{browser.i18n.getMessage('heatmapEmptyHint') || 'Complete a session to see your activity'}</p>
-        </Show>
       </div>
 
       <button
@@ -177,7 +162,7 @@ export default function App() {
         onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
         class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
       >
-        {browser.i18n.getMessage('viewAllStats') || 'View all stats →'}
+        View all stats →
       </button>
     </div>
   );
