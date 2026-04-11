@@ -2,7 +2,7 @@ import { createSignal, onMount, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { getConfig, setConfig } from '@/lib/storage';
-import { DEFAULT_CONFIG, type TimerConfig } from '@/lib/types';
+import { DEFAULT_CONFIG, type TimerConfig, type TimerState } from '@/lib/types';
 
 const MS_PER_MINUTE = 60_000;
 
@@ -11,6 +11,7 @@ export default function App() {
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
   const [saved, setSaved] = createSignal(false);
+  const [timerWarning, setTimerWarning] = createSignal(false);
 
   onMount(async () => {
     const config = await getConfig();
@@ -29,6 +30,12 @@ export default function App() {
     await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+
+    const state = await browser.runtime.sendMessage({ action: 'GET_STATE' }) as TimerState;
+    if (state.phase !== 'IDLE') {
+      setTimerWarning(true);
+      setTimeout(() => setTimerWarning(false), 5000);
+    }
   };
 
   const handleReset = () => {
@@ -101,6 +108,12 @@ export default function App() {
             <span class="text-sm text-green-600">Settings saved ✓</span>
           </Show>
         </div>
+
+        <Show when={timerWarning()}>
+          <p class="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            Note: Changes to session durations will take effect on the next session.
+          </p>
+        </Show>
       </div>
     </div>
   );
