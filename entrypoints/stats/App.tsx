@@ -1,4 +1,5 @@
-import { createResource, For } from 'solid-js';
+import { createResource, onMount, onCleanup, For } from 'solid-js';
+import { browser } from 'wxt/browser';
 
 import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
@@ -30,9 +31,21 @@ function StatCard(props: StatCardProps) {
 }
 
 export default function App() {
-  const [yearData] = createResource(() => getHeatmapData(365));
-  const [sessions] = createResource(() => getSessionHistory());
-  const [todayCount] = createResource(() => getTodayCount());
+  const [yearData, { refetch: refetchYearData }] = createResource(() => getHeatmapData(365));
+  const [sessions, { refetch: refetchSessions }] = createResource(() => getSessionHistory());
+  const [todayCount, { refetch: refetchTodayCount }] = createResource(() => getTodayCount());
+
+  onMount(() => {
+    const handler = (changes: Record<string, browser.storage.StorageChange>) => {
+      if ('sessions' in changes || 'todayCount' in changes) {
+        refetchSessions();
+        refetchTodayCount();
+        refetchYearData();
+      }
+    };
+    browser.storage.onChanged.addListener(handler);
+    onCleanup(() => browser.storage.onChanged.removeListener(handler));
+  });
 
   const total = () => computeTotalCount(sessions() ?? []);
   const week = () => computeWeekCount(sessions() ?? []);
