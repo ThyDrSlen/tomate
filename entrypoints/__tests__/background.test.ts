@@ -8,6 +8,7 @@ import {
   getPendingCelebration,
   getSessionHistory,
   getTimerState,
+  setConfig,
   setCurrentLabel,
   setTimerState,
 } from '@/lib/storage';
@@ -202,8 +203,8 @@ describe('background service worker', () => {
     await expect(getTimerState()).resolves.toEqual(
       createState({
         phase: 'SHORT_BREAK',
-        startTime: 10_000,
-        endTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
+        startTime: 2_000,
+        endTime: 2_000 + DEFAULT_CONFIG.shortBreakDuration,
         duration: DEFAULT_CONFIG.shortBreakDuration,
         sessionCount: 1,
         completedToday: 1,
@@ -222,7 +223,7 @@ describe('background service worker', () => {
     ]);
     await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
       expect.objectContaining({
-        scheduledTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
+        scheduledTime: 2_000 + DEFAULT_CONFIG.shortBreakDuration,
       }),
     );
   });
@@ -322,5 +323,103 @@ describe('background service worker', () => {
         scheduledTime: 25_000,
       }),
     );
+  });
+
+  // #269: openBreakTab path in onAlarm
+  it('opens the stats tab on working alarm completion when openBreakTab is true', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    const tabsCreate = vi.fn().mockResolvedValue({});
+    fakeBrowser.tabs.create = tabsCreate;
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(tabsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ url: expect.stringContaining('stats.html') }),
+    );
+  });
+
+  it('does NOT open the stats tab on working alarm completion when openBreakTab is false', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    const tabsCreate = vi.fn().mockResolvedValue({});
+    fakeBrowser.tabs.create = tabsCreate;
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    // set openBreakTab: false in config
+    await setConfig(createConfig({ openBreakTab: false }));
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(tabsCreate).not.toHaveBeenCalled();
+  });
+
+  // #270: multi-hop missed alarm recovery
+  it('recovers two-hop missed alarms: WORKING->SHORT_BREAK->IDLE when both phases expired', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(100_000);
+    await setCurrentLabel('Multi-hop work');
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      }),
+    );
+    // Use a short break duration that also expires before now=100_000
+    await setConfig(createConfig({ shortBreakDuration: 500 }));
+    await initBackground();
+
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
+
+    // Both WORKING and SHORT_BREAK have expired -> final state is IDLE
+    const finalState = await getTimerState();
+    expect(finalState.phase).toBe('IDLE');
+    expect(finalState.sessionCount).toBe(1);
+    expect(finalState.completedToday).toBe(1);
+
+    // Alarm should be cleared since we're idle
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toBeUndefined();
+
+    // Session was saved for the WORKING phase
+    const sessions = await getSessionHistory();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({ label: 'Multi-hop work' });
+  });
+
+  it('exits gracefully and reaches IDLE when both WORKING and SHORT_BREAK have expired', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    // Use a very short cycle so many hops would occur without cap
+    await setConfig(createConfig({ workDuration: 100, shortBreakDuration: 100 }));
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 1_100,
+        duration: 100,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
+
+    const finalState = await getTimerState();
+    // WORKING -> SHORT_BREAK -> IDLE (both phases expired)
+    expect(finalState.phase).toBe('IDLE');
+    expect(finalState.sessionCount).toBe(1);
   });
 });
