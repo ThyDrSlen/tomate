@@ -1,4 +1,4 @@
-import { createResource, For, Show } from 'solid-js';
+import { createResource, For, Show, onCleanup } from 'solid-js';
 
 import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
@@ -46,9 +46,19 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
 }
 
 export default function App() {
-  const [yearData] = createResource(() => getHeatmapData(365));
-  const [sessions] = createResource(() => getSessionHistory());
-  const [todayCount] = createResource(() => getTodayCount());
+  const [yearData, { refetch: refetchYearData }] = createResource(() => getHeatmapData(365));
+  const [sessions, { refetch: refetchSessions }] = createResource(() => getSessionHistory());
+  const [todayCount, { refetch: refetchTodayCount }] = createResource(() => getTodayCount());
+
+  const handleStorageChange = (changes: Record<string, browser.storage.StorageChange>) => {
+    if ('sessions' in changes) {
+      refetchSessions();
+      refetchYearData();
+      refetchTodayCount();
+    }
+  };
+  browser.storage.onChanged.addListener(handleStorageChange);
+  onCleanup(() => browser.storage.onChanged.removeListener(handleStorageChange));
 
   const total = () => computeTotalCount(sessions() ?? []);
   const week = () => computeWeekCount(sessions() ?? []);
