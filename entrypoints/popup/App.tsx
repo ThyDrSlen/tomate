@@ -32,8 +32,16 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    try {
+      const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
+      setState(currentState as TimerState);
+    } catch (e) {
+      console.warn('Background not ready, reading storage directly:', e);
+      const result = await chrome.storage.local.get('timerState');
+      if (result.timerState) {
+        setState(result.timerState as TimerState);
+      }
+    }
 
     const pending = await getPendingCelebration();
     if (pending) {
