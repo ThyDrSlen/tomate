@@ -44,8 +44,13 @@ export default function App() {
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const onStorageChanged = (changes: Record<string, chrome.storage.StorageChange>) => {
+      if ('sessions' in changes || 'completedToday' in changes) {
+        refreshStats();
+      }
+    };
+    browser.storage.onChanged.addListener(onStorageChanged);
+    onCleanup(() => browser.storage.onChanged.removeListener(onStorageChanged));
   });
 
   createEffect(() => {
@@ -118,7 +123,7 @@ export default function App() {
       <TimerRing progress={progress()} phase={state().phase} />
       <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
-      <div class="text-sm text-gray-500 mt-1">
+      <div class="text-sm text-gray-500 mt-1" aria-live="polite">
         <Switch>
           <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
           <Match when={state().phase === 'WORKING'}>Working</Match>
