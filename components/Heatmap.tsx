@@ -74,6 +74,8 @@ export default function Heatmap(props: HeatmapProps) {
 
   const toMonRow = (jsDay: number) => (jsDay === 0 ? 6 : jsDay - 1);
 
+  const today = toDateKey(new Date());
+
   const columns = createMemo(() => {
     const cells = grid();
     const cols: (HeatmapCell | null)[][] = [];
@@ -125,7 +127,82 @@ export default function Heatmap(props: HeatmapProps) {
     return `${label} on ${cell.date}`;
   };
 
+  const ariaLabel = (cell: HeatmapCell) => {
+    const count = cell.count;
+    return `${cell.date}: ${count} session${count !== 1 ? 's' : ''}`;
+  };
+
   const labelWidth = 24;
+
+  // Store refs to all real (non-null) cell elements as a 2D array [col][row]
+  // so we can navigate between them with arrow keys.
+  let cellRefs: (HTMLDivElement | null)[][] = [];
+
+  const handleCellKeyDown = (
+    e: KeyboardEvent,
+    colIdx: number,
+    rowIdx: number,
+  ) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      // Cells have no click action beyond focus; prevent scroll on Space
+      e.preventDefault();
+      return;
+    }
+
+    let targetCol = colIdx;
+    let targetRow = rowIdx;
+
+    if (e.key === 'ArrowRight') {
+      targetCol = colIdx + 1;
+    } else if (e.key === 'ArrowLeft') {
+      targetCol = colIdx - 1;
+    } else if (e.key === 'ArrowDown') {
+      targetRow = rowIdx + 1;
+    } else if (e.key === 'ArrowUp') {
+      targetRow = rowIdx - 1;
+    } else {
+      return;
+    }
+
+    e.preventDefault();
+
+    const cols = cellRefs;
+    // Clamp column
+    if (targetCol < 0 || targetCol >= cols.length) return;
+    // Clamp row within 0-6
+    if (targetRow < 0 || targetRow > 6) return;
+
+    // Find closest non-null cell in the target column/row direction
+    const tryFocus = (c: number, r: number): boolean => {
+      const ref = cols[c]?.[r];
+      if (ref) {
+        ref.focus();
+        return true;
+      }
+      return false;
+    };
+
+    if (!tryFocus(targetCol, targetRow)) {
+      // For left/right, try the same row index in adjacent columns
+      // For up/down, try the same col index in adjacent rows
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        // Try scanning further in the same direction
+        const direction = e.key === 'ArrowRight' ? 1 : -1;
+        let c = targetCol;
+        while (c >= 0 && c < cols.length) {
+          if (tryFocus(c, targetRow)) return;
+          c += direction;
+        }
+      } else {
+        const direction = e.key === 'ArrowDown' ? 1 : -1;
+        let r = targetRow;
+        while (r >= 0 && r <= 6) {
+          if (tryFocus(targetCol, r)) return;
+          r += direction;
+        }
+      }
+    }
+  };
 
   return (
     <div class="w-full overflow-x-auto">
@@ -160,6 +237,7 @@ export default function Heatmap(props: HeatmapProps) {
             width: `${labelWidth}px`,
             gap: `${gap}px`,
           }}
+          aria-hidden="true"
         >
           <For each={DAY_LABELS}>
             {(label) => (
@@ -173,40 +251,76 @@ export default function Heatmap(props: HeatmapProps) {
           </For>
         </div>
 
-        {/* Heatmap cells - CSS Grid: 7 rows, auto columns */}
+        {/* Heatmap cells — ARIA grid: role="grid" > role="row" > role="gridcell" */}
+        {/*
+          The visual layout uses CSS grid with grid-auto-flow: column (column-major),
+          but ARIA grid requires row-major DOM order. We render 7 rows, each containing
+          one cell per week-column, to satisfy the grid/row/gridcell hierarchy while
+          keeping the same visual appearance via CSS grid placed on the outer wrapper.
+        */}
         <div
-          class="grid"
+          role="grid"
+          aria-label="Session history heatmap"
           style={{
+            display: 'grid',
             "grid-template-rows": `repeat(7, ${cellSize()}px)`,
             "grid-auto-flow": "column",
             "grid-auto-columns": `${cellSize()}px`,
             gap: `${gap}px`,
           }}
         >
-          <For each={columns()}>
-            {(col) => (
-              <For each={col}>
-                {(cell) =>
-                  cell ? (
-                    <div
-                      class="rounded-sm"
-                      style={{
-                        width: `${cellSize()}px`,
-                        height: `${cellSize()}px`,
-                        "background-color": getIntensityColor(cell.count),
-                      }}
-                      title={tooltipText(cell)}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: `${cellSize()}px`,
-                        height: `${cellSize()}px`,
-                      }}
-                    />
-                  )
-                }
-              </For>
+          <For each={Array.from({ length: 7 }, (_, rowIdx) => rowIdx)}>
+            {(rowIdx) => (
+              <div
+                role="row"
+                style={{
+                  display: 'contents',
+                }}
+              >
+                <For each={columns()}>
+                  {(col, colIdxFn) => {
+                    const colIdx = colIdxFn();
+                    const cell = col[rowIdx];
+                    if (cell) {
+                      return (
+                        <div
+                          role="gridcell"
+                          class="rounded-sm"
+                          style={{
+                            width: `${cellSize()}px`,
+                            height: `${cellSize()}px`,
+                            "background-color": getIntensityColor(cell.count),
+                            // Ensure explicit grid placement so column-major order is preserved
+                            "grid-column": `${colIdx + 1}`,
+                            "grid-row": `${rowIdx + 1}`,
+                          }}
+                          title={tooltipText(cell)}
+                          aria-label={ariaLabel(cell)}
+                          aria-current={cell.date === today ? 'date' : undefined}
+                          tabIndex={0}
+                          onKeyDown={(e) => handleCellKeyDown(e, colIdx, rowIdx)}
+                          ref={(el) => {
+                            if (!cellRefs[colIdx]) cellRefs[colIdx] = [];
+                            cellRefs[colIdx][rowIdx] = el;
+                          }}
+                        />
+                      );
+                    }
+                    return (
+                      <div
+                        role="gridcell"
+                        aria-hidden="true"
+                        style={{
+                          width: `${cellSize()}px`,
+                          height: `${cellSize()}px`,
+                          "grid-column": `${colIdx + 1}`,
+                          "grid-row": `${rowIdx + 1}`,
+                        }}
+                      />
+                    );
+                  }}
+                </For>
+              </div>
             )}
           </For>
         </div>
