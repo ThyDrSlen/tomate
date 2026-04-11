@@ -4,6 +4,8 @@ type HeatmapProps = {
   data: Record<string, number>;
   days: number;
   cellSize?: number;
+  /** ISO date string (YYYY-MM-DD) for the last day shown. Defaults to today. */
+  anchorDate?: string;
 };
 
 type HeatmapCell = {
@@ -45,13 +47,14 @@ const toDateKey = (date: Date): string => {
 const generateHeatmapGrid = (
   data: Record<string, number>,
   days: number,
+  anchorDate?: string,
 ): HeatmapCell[] => {
   const cells: HeatmapCell[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const anchor = anchorDate ? new Date(`${anchorDate}T00:00:00`) : new Date();
+  anchor.setHours(0, 0, 0, 0);
 
   for (let i = days - 1; i >= 0; i--) {
-    const date = new Date(today);
+    const date = new Date(anchor);
     date.setDate(date.getDate() - i);
     const key = toDateKey(date);
     cells.push({
@@ -70,7 +73,7 @@ export default function Heatmap(props: HeatmapProps) {
   const cellSize = () => props.cellSize ?? 12;
   const gap = 2;
 
-  const grid = createMemo(() => generateHeatmapGrid(props.data, props.days));
+  const grid = createMemo(() => generateHeatmapGrid(props.data, props.days, props.anchorDate));
 
   const toMonRow = (jsDay: number) => (jsDay === 0 ? 6 : jsDay - 1);
 

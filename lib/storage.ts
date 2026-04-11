@@ -83,6 +83,20 @@ export const getHeatmapData = async (days: number): Promise<Record<string, numbe
   }, {});
 };
 
+export const getHeatmapDataForRange = async (
+  startKey: string,
+  endKey: string,
+): Promise<Record<string, number>> => {
+  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+
+  return sessions
+    .filter((s) => s.date >= startKey && s.date <= endKey)
+    .reduce<Record<string, number>>((acc, session) => {
+      acc[session.date] = (acc[session.date] ?? 0) + 1;
+      return acc;
+    }, {});
+};
+
 export const getTodayCount = async (): Promise<number> => {
   const todayKey = toDateKey(Date.now());
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
