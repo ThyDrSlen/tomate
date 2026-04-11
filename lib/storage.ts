@@ -19,14 +19,23 @@ const KEYS = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
 
+const STORAGE_VERSION = 2;
+
+type StoredConfig = TimerConfig & { _version?: number };
+
 const startOfLocalDay = (timestamp: number): Date => {
   const date = new Date(timestamp);
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
-const getStoredValue = async <T>(key: string): Promise<T | undefined> => {
+const getStoredValue = async <T>(key: string, defaultValue: T | null = null): Promise<T | null> => {
   const result = await browser.storage.local.get(key);
-  return result[key] as T | undefined;
+  const value = result[key] as T | undefined;
+  return value !== undefined ? value : defaultValue;
+};
+
+const setStoredValue = async <T>(key: string, value: T): Promise<void> => {
+  await browser.storage.local.set({ [key]: value });
 };
 
 export const toDateKey = (timestamp: number): string => {
@@ -45,8 +54,17 @@ export const setTimerState = async (state: TimerState): Promise<void> => {
   await browser.storage.local.set({ [KEYS.TIMER_STATE]: state });
 };
 
-export const getConfig = async (): Promise<TimerConfig> =>
-  (await getStoredValue<TimerConfig>(KEYS.CONFIG)) ?? DEFAULT_CONFIG;
+export const getConfig = async (): Promise<TimerConfig> => {
+  const stored = await getStoredValue<StoredConfig>(KEYS.CONFIG, null);
+  const version = stored?._version ?? 1;
+  const { _version: _v, ...storedFields } = stored ?? {};
+  const config: TimerConfig = { ...DEFAULT_CONFIG, ...storedFields };
+  if (version < STORAGE_VERSION) {
+    // v1→v2: ensure all new fields have defaults
+    await setStoredValue(KEYS.CONFIG, { ...config, _version: STORAGE_VERSION });
+  }
+  return config;
+};
 
 export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
