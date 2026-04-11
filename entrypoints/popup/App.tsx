@@ -10,8 +10,10 @@ import {
   setCurrentLabel,
   getTodayCount,
   getHeatmapData,
+  getConfig,
 } from '@/lib/storage';
-import { INITIAL_STATE, type TimerState } from '@/lib/types';
+import { INITIAL_STATE, type TimerState, type AmbientSound } from '@/lib/types';
+import { ambientPlay, ambientStop } from '@/lib/ambient';
 
 import TimerRing from '@/components/TimerRing';
 import Controls from '@/components/Controls';
@@ -25,10 +27,18 @@ export default function App() {
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [ambientSound, setAmbientSound] = createSignal<AmbientSound>('none');
+  const [ambientVolume, setAmbientVolume] = createSignal(50);
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
     setHeatmapData(await getHeatmapData(120));
+  };
+
+  const refreshAmbientConfig = async () => {
+    const config = await getConfig();
+    setAmbientSound(config.ambientSound);
+    setAmbientVolume(config.ambientVolume);
   };
 
   onMount(async () => {
@@ -43,9 +53,18 @@ export default function App() {
 
     setLabel(await getCurrentLabel());
     await refreshStats();
+    await refreshAmbientConfig();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const handleStorageChange = async () => {
+      await refreshStats();
+      await refreshAmbientConfig();
+    };
+
+    browser.storage.onChanged.addListener(handleStorageChange);
+    onCleanup(() => {
+      browser.storage.onChanged.removeListener(handleStorageChange);
+      ambientStop();
+    });
   });
 
   createEffect(() => {
@@ -57,6 +76,19 @@ export default function App() {
       onCleanup(() => clearInterval(id));
     } else {
       setRemaining(0);
+    }
+  });
+
+  // Ambient sound: play during WORKING phase only, stop otherwise
+  createEffect(() => {
+    const phase = state().phase;
+    const sound = ambientSound();
+    const volume = ambientVolume();
+
+    if (phase === 'WORKING' && sound !== 'none') {
+      ambientPlay(sound, volume);
+    } else {
+      ambientStop();
     }
   });
 
