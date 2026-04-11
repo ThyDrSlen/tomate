@@ -270,4 +270,58 @@ describe('background service worker', () => {
       }),
     );
   });
+
+  // Issue #179: onAlarm handler error path
+  it('surfaces a storage error thrown inside the onAlarm handler without crashing', async () => {
+    await initBackground();
+
+    // Simulate a storage failure by making browser.storage.local.get throw.
+    // getTimerState delegates to browser.storage.local.get, so this exercises the
+    // error path inside the onAlarm handler.  The handler has no try/catch, so the
+    // rejection propagates — fakeBrowser surfaces it so we can assert it exists rather
+    // than silently swallowing it.
+    vi.spyOn(fakeBrowser.storage.local, 'get').mockRejectedValueOnce(
+      new Error('storage read failure'),
+    );
+
+    await expect(
+      fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 1_000 }),
+    ).rejects.toThrow('storage read failure');
+  });
+
+  // Issue #177: onInstalled 'update' reason reschedules an existing active timer
+  it('reschedules a pending timer when the extension is updated (onInstalled reason=update)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(12_000);
+    // Store an active working timer that was in-progress before the extension update.
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 8_000,
+        endTime: 9_000,  // endTime is in the past → recoverMissedAlarm will handle it
+        duration: 1_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
+
+    // recoverFromMissedAlarm should have transitioned WORKING → SHORT_BREAK
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: 12_000,
+        endTime: 12_000 + DEFAULT_CONFIG.shortBreakDuration,
+        duration: DEFAULT_CONFIG.shortBreakDuration,
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+    );
+    // A new timer alarm must have been created for the break end time.
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
+      expect.objectContaining({
+        scheduledTime: 12_000 + DEFAULT_CONFIG.shortBreakDuration,
+      }),
+    );
+    await expect(getPendingCelebration()).resolves.toBe(true);
+  });
 });
