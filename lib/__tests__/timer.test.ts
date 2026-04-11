@@ -258,4 +258,126 @@ describe('timer state machine', () => {
     expect(isActivePhase('IDLE')).toBe(false);
     expect(isActivePhase('BREAK_SUGGESTION')).toBe(false);
   });
+
+  describe('BREAK_SUGGESTION edge cases', () => {
+    const breakSuggestionState = (): TimerState =>
+      createState({
+        phase: 'BREAK_SUGGESTION',
+        startTime: null,
+        endTime: null,
+        duration: null,
+        sessionCount: 4,
+        cyclePosition: 3,
+        completedToday: 4,
+      });
+
+    it('startTimer from BREAK_SUGGESTION is a no-op', () => {
+      const state = breakSuggestionState();
+      expect(startTimer(state, DEFAULT_CONFIG, 1_000)).toBe(state);
+    });
+
+    it('completeTimer from BREAK_SUGGESTION is a no-op', () => {
+      const state = breakSuggestionState();
+      expect(completeTimer(state, DEFAULT_CONFIG, 1_000)).toBe(state);
+    });
+
+    it('abandonTimer from BREAK_SUGGESTION is a no-op', () => {
+      const state = breakSuggestionState();
+      expect(abandonTimer(state)).toBe(state);
+    });
+
+    it('acceptLongBreak from non-BREAK_SUGGESTION phase is a no-op', () => {
+      const idleState = createState();
+      expect(acceptLongBreak(idleState, DEFAULT_CONFIG, 1_000)).toBe(idleState);
+
+      const workingState = createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      });
+      expect(acceptLongBreak(workingState, DEFAULT_CONFIG, 1_500)).toBe(workingState);
+    });
+
+    it('skipLongBreak from non-BREAK_SUGGESTION phase is a no-op', () => {
+      const idleState = createState();
+      expect(skipLongBreak(idleState)).toBe(idleState);
+
+      const workingState = createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      });
+      expect(skipLongBreak(workingState)).toBe(workingState);
+    });
+
+    it('BREAK_SUGGESTION is triggered only at cyclePosition 3, not at earlier positions', () => {
+      const config = createConfig({ workDuration: 1_000, shortBreakDuration: 200 });
+
+      for (const position of [0, 1, 2] as const) {
+        const state = createState({
+          phase: 'WORKING',
+          startTime: 0,
+          endTime: 1_000,
+          duration: 1_000,
+          cyclePosition: position,
+        });
+        const next = completeTimer(state, config, 1_000);
+        expect(next.phase).toBe('SHORT_BREAK');
+      }
+
+      const state = createState({
+        phase: 'WORKING',
+        startTime: 0,
+        endTime: 1_000,
+        duration: 1_000,
+        cyclePosition: 3,
+      });
+      const next = completeTimer(state, config, 1_000);
+      expect(next.phase).toBe('BREAK_SUGGESTION');
+    });
+
+    it('cyclePosition increments through each short break completion (0 → 1 → 2 → 3)', () => {
+      const config = createConfig({ workDuration: 1_000, shortBreakDuration: 200 });
+      let state = createState();
+
+      for (const expected of [1, 2, 3]) {
+        state = startTimer(state, config, 0);
+        state = completeTimer(state, config, 1_000);
+        expect(state.phase).toBe('SHORT_BREAK');
+        state = completeTimer(state, config, 1_200);
+        expect(state.phase).toBe('IDLE');
+        expect(state.cyclePosition).toBe(expected);
+      }
+    });
+
+    it('skipLongBreak resets cyclePosition to 0 and returns to IDLE preserving counters', () => {
+      const state = breakSuggestionState();
+      const result = skipLongBreak(state);
+
+      expect(result.phase).toBe('IDLE');
+      expect(result.cyclePosition).toBe(0);
+      expect(result.sessionCount).toBe(state.sessionCount);
+      expect(result.completedToday).toBe(state.completedToday);
+      expect(result.startTime).toBeNull();
+      expect(result.endTime).toBeNull();
+      expect(result.duration).toBeNull();
+    });
+
+    it('acceptLongBreak preserves sessionCount and completedToday while starting LONG_BREAK', () => {
+      const now = 5_000;
+      const config = createConfig({ longBreakDuration: 900 });
+      const state = breakSuggestionState();
+      const result = acceptLongBreak(state, config, now);
+
+      expect(result.phase).toBe('LONG_BREAK');
+      expect(result.startTime).toBe(now);
+      expect(result.endTime).toBe(now + config.longBreakDuration);
+      expect(result.duration).toBe(config.longBreakDuration);
+      expect(result.sessionCount).toBe(state.sessionCount);
+      expect(result.completedToday).toBe(state.completedToday);
+      expect(result.cyclePosition).toBe(state.cyclePosition);
+    });
+  });
 });
