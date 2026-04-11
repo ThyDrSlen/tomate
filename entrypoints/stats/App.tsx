@@ -1,4 +1,4 @@
-import { createResource, For } from 'solid-js';
+import { createResource, For, Show } from 'solid-js';
 
 import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
@@ -39,11 +39,28 @@ export default function App() {
   const bestDay = () => computeBestDay(sessions() ?? []);
   const streak = () => computeStreak(sessions() ?? []);
 
+  const hasError = () => yearData.error || sessions.error || todayCount.error;
+  const isLoading = () => yearData.loading || sessions.loading || todayCount.loading;
+
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
       <div class="max-w-[800px] mx-auto">
         <h1 class="text-2xl font-bold text-red-600 mb-6">Tomate Stats</h1>
 
+        <Show when={hasError()}>
+          <div
+            role="alert"
+            class="mb-6 rounded-xl bg-white border border-red-200 p-4 text-center text-sm text-red-600 shadow-sm"
+          >
+            Failed to load stats. Try reloading.
+          </div>
+        </Show>
+
+        <Show when={isLoading()}>
+          <div class="mb-6 text-center text-sm text-gray-400">Loading…</div>
+        </Show>
+
+        <Show when={!hasError()}>
         <div class="grid grid-cols-5 gap-3 mb-6">
           <StatCard label="Total tomates" value={total()} />
           <StatCard label="Today" value={todayCount() ?? 0} />
@@ -77,6 +94,7 @@ export default function App() {
             <span>More</span>
           </div>
         </div>
+        </Show>
       </div>
     </div>
   );
