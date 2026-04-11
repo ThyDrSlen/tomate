@@ -115,7 +115,7 @@ export default function App() {
         </button>
       </div>
 
-      <TimerRing progress={progress()} phase={state().phase} timeLabel={formatTime()} />
+      <TimerRing progress={progress()} phase={state().phase} remainingLabel={formatTime()} />
       <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
       <div class="text-sm text-gray-500 mt-1">
@@ -148,7 +148,6 @@ export default function App() {
         type="button"
         onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
         class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
-        aria-label="View all stats"
       >
         View all stats →
       </button>
