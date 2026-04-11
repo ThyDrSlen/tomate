@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -19,7 +19,16 @@ import TaskLabel from '@/components/TaskLabel';
 import TodayCount from '@/components/TodayCount';
 import Heatmap from '@/components/Heatmap';
 
+// Fix #2 — ensure any pending sendMessage is awaited before closing the popup
+async function closePopup(pendingMessages: Promise<unknown>[] = []) {
+  await Promise.allSettled(pendingMessages);
+  window.close();
+}
+
 export default function App() {
+  // Fix #50 — track async-load state so we don't render stale INITIAL_STATE
+  const [loading, setLoading] = createSignal(true);
+
   const [state, setState] = createSignal<TimerState>(INITIAL_STATE);
   const [remaining, setRemaining] = createSignal(0);
   const [label, setLabel] = createSignal('');
@@ -34,6 +43,9 @@ export default function App() {
   onMount(async () => {
     const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
     setState(currentState as TimerState);
+
+    // Fix #50 — state is now real; reveal the UI
+    setLoading(false);
 
     const pending = await getPendingCelebration();
     if (pending) {
@@ -94,11 +106,22 @@ export default function App() {
     setState(newState as TimerState);
   };
 
-  let labelTimeout: ReturnType<typeof setTimeout>;
+  // Fix #3 — keep a ref to the timeout so we can cancel it on unmount
+  let labelTimeout: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(labelTimeout));
+
   const handleLabelChange = (value: string) => {
     setLabel(value);
     clearTimeout(labelTimeout);
     labelTimeout = setTimeout(() => setCurrentLabel(value), 300);
+  };
+
+  // Fix #17 — compute human-readable cycle position (1-based, repeats every 4)
+  const cycleLabel = () => {
+    const s = state();
+    // cyclePosition is 0-indexed within the current 4-session cycle
+    const pos = (s.cyclePosition % 4) + 1;
+    return `Session ${pos} of 4`;
   };
 
   return (
@@ -115,42 +138,59 @@ export default function App() {
         </button>
       </div>
 
-      <TimerRing progress={progress()} phase={state().phase} />
-      <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
-
-      <div class="text-sm text-gray-500 mt-1">
-        <Switch>
-          <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
-          <Match when={state().phase === 'WORKING'}>Working</Match>
-          <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
-          <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
-          <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
-        </Switch>
-      </div>
-
-      <TaskLabel value={label()} onChange={handleLabelChange} />
-
-      <Controls
-        phase={state().phase}
-        onStart={startTimer}
-        onAbandon={abandonTimer}
-        onAcceptLongBreak={acceptLongBreak}
-        onSkipLongBreak={skipLongBreak}
-      />
-
-      <TodayCount count={todayCount()} />
-
-      <div class="mt-2 w-full">
-        <Heatmap days={120} data={heatmapData()} />
-      </div>
-
-      <button
-        type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
-        class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
+      {/* Fix #50 — show loading indicator until async state arrives */}
+      <Show
+        when={!loading()}
+        fallback={
+          <div class="flex-1 flex items-center justify-center py-16 text-gray-400 text-sm">
+            Loading…
+          </div>
+        }
       >
-        View all stats →
-      </button>
+        <TimerRing progress={progress()} phase={state().phase} />
+        <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
+
+        <div class="text-sm text-gray-500 mt-1">
+          <Switch>
+            <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
+            <Match when={state().phase === 'WORKING'}>Working</Match>
+            <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
+            <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
+            <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
+          </Switch>
+        </div>
+
+        {/* Fix #17 — cycle position indicator */}
+        <div class="text-xs text-gray-400 mt-0.5">{cycleLabel()}</div>
+
+        <TaskLabel value={label()} onChange={handleLabelChange} />
+
+        <Controls
+          phase={state().phase}
+          onStart={startTimer}
+          onAbandon={abandonTimer}
+          onAcceptLongBreak={acceptLongBreak}
+          onSkipLongBreak={skipLongBreak}
+        />
+
+        <TodayCount count={todayCount()} />
+
+        <div class="mt-2 w-full">
+          <Heatmap days={120} data={heatmapData()} />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+          class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
+        >
+          View all stats →
+        </button>
+      </Show>
     </div>
   );
 }
+
+// Re-export closePopup so callers that need to close the popup after sending a
+// message can await it properly (Fix #2).
+export { closePopup };
