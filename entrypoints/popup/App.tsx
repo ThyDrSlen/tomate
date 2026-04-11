@@ -32,17 +32,25 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
+    const [currentState, pending, currentLabel, todayCountValue, heatmapDataValue] =
+      await Promise.all([
+        browser.runtime.sendMessage({ action: 'GET_STATE' }),
+        getPendingCelebration(),
+        getCurrentLabel(),
+        getTodayCount(),
+        getHeatmapData(120),
+      ]);
+
     setState(currentState as TimerState);
 
-    const pending = await getPendingCelebration();
     if (pending) {
       playCelebration('work');
       await setPendingCelebration(false);
     }
 
-    setLabel(await getCurrentLabel());
-    await refreshStats();
+    setLabel(currentLabel);
+    setTodayCount(todayCountValue);
+    setHeatmapData(heatmapDataValue);
 
     browser.storage.onChanged.addListener(refreshStats);
     onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
