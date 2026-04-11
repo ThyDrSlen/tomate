@@ -115,24 +115,42 @@ export default defineBackground(() => {
   };
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const recovered = recoverMissedAlarm(state, config);
+    const [initialState, config] = await Promise.all([getTimerState(), getConfig()]);
+    const firstRecovered = recoverMissedAlarm(initialState, config);
 
-    if (!recovered) {
+    if (!firstRecovered) {
       await refreshBadge();
       return;
     }
 
-    await setTimerState(recovered);
-
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
+    // Track whether the original WORKING phase needs a session persisted
+    if (initialState.phase === 'WORKING') {
+      await persistCompletedSession(initialState, Date.now());
     }
 
-    if (recovered.phase === 'SHORT_BREAK' && recovered.endTime !== null) {
-      await scheduleTimerAlarm(recovered.endTime);
+    // Loop until the resulting state's endTime is in the future, or we reach
+    // a terminal phase (IDLE / BREAK_SUGGESTION). Cap at 10 iterations for safety.
+    const MAX_ITERATIONS = 10;
+    let current = firstRecovered;
+    let iterations = 0;
+
+    while (
+      iterations < MAX_ITERATIONS &&
+      current.endTime !== null &&
+      current.endTime <= Date.now() &&
+      isActivePhase(current.phase)
+    ) {
+      const next = completeTimer(current, config);
+      current = next;
+      iterations++;
+    }
+
+    await setTimerState(current);
+
+    if (isActivePhase(current.phase) && current.endTime !== null) {
+      await scheduleTimerAlarm(current.endTime);
       await startBadgeRefresh();
-    } else if (!isActivePhase(recovered.phase)) {
+    } else {
       await clearActiveAlarms();
     }
 
