@@ -5,6 +5,7 @@ import {
   acceptLongBreak,
   adjustDuration,
   completeTimer,
+  goalReached,
   getRemainingMs,
   isActivePhase,
   recoverMissedAlarm,
@@ -243,12 +244,38 @@ describe('timer state machine', () => {
     expect(getRemainingMs(state, 10_500)).toBe(0);
   });
 
-  it('uses the default 25/5/30 minute config values', () => {
+  it('uses the default 25/5/30 minute config values with daily goal of 8', () => {
     expect(DEFAULT_CONFIG).toEqual({
       workDuration: 25 * 60 * 1000,
       shortBreakDuration: 5 * 60 * 1000,
       longBreakDuration: 30 * 60 * 1000,
+      dailyGoal: 8,
     });
+  });
+
+  it('goalReached returns false when completedToday is below the daily goal', () => {
+    const state = createState({ completedToday: 7 });
+    const config = createConfig({ dailyGoal: 8 });
+
+    expect(goalReached(state, config)).toBe(false);
+  });
+
+  it('goalReached returns true when completedToday equals the daily goal', () => {
+    const state = createState({ completedToday: 8 });
+    const config = createConfig({ dailyGoal: 8 });
+
+    expect(goalReached(state, config)).toBe(true);
+  });
+
+  it('goalReached returns true when completedToday exceeds the daily goal', () => {
+    const state = createState({ completedToday: 10 });
+    const config = createConfig({ dailyGoal: 8 });
+
+    expect(goalReached(state, config)).toBe(true);
+  });
+
+  it('goalReached returns false when completedToday is zero', () => {
+    expect(goalReached(createState(), DEFAULT_CONFIG)).toBe(false);
   });
 
   it('identifies active phases correctly', () => {

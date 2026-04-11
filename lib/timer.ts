@@ -157,3 +157,6 @@ export const recoverMissedAlarm = (
 
 export const getRemainingMs = (state: TimerState, now?: number): number =>
   Math.max(0, (state.endTime ?? 0) - getNow(now));
+
+export const goalReached = (state: TimerState, config: TimerConfig): boolean =>
+  state.completedToday >= config.dailyGoal;
