@@ -119,6 +119,12 @@ export default defineBackground(() => {
     const recovered = recoverMissedAlarm(state, config);
 
     if (!recovered) {
+      // Timer hasn't expired yet — if it's still active, reschedule the alarm
+      // (alarms are cleared when the extension updates or the service worker restarts)
+      if (isActivePhase(state.phase) && state.endTime !== null) {
+        await scheduleTimerAlarm(state.endTime);
+        await startBadgeRefresh();
+      }
       await refreshBadge();
       return;
     }
