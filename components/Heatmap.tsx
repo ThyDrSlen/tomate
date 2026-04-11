@@ -22,10 +22,10 @@ const INTENSITY_COLORS = [
 
 const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''] as const;
 
-const MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-] as const;
+const getShortMonthName = (monthIndex: number): string => {
+  const date = new Date(2000, monthIndex, 1);
+  return new Intl.DateTimeFormat(undefined, { month: 'short' }).format(date);
+};
 
 const getIntensityColor = (count: number): string => {
   if (count === 0) return INTENSITY_COLORS[0];
@@ -110,7 +110,7 @@ export default function Heatmap(props: HeatmapProps) {
       if (firstCell) {
         const month = Number.parseInt(firstCell.date.split('-')[1], 10) - 1;
         if (month !== lastMonth) {
-          labels.push({ label: MONTH_NAMES[month], column: c });
+          labels.push({ label: getShortMonthName(month), column: c });
           lastMonth = month;
         }
       }

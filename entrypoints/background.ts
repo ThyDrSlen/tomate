@@ -231,42 +231,34 @@ export default defineBackground(() => {
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
-      try {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: '🍅 Tomate Complete!',
-          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-        });
-      } catch (err) {
-        console.error('[tomate] failed to show work-complete notification:', err);
-      }
+      const workTitle = (() => { try { return browser.i18n.getMessage('notificationWorkTitle'); } catch { return ''; } })();
+      await browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+        title: workTitle || '🍅 Tomate Complete!',
+        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+      });
       if (config.openBreakTab !== false) {
         try {
           await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
         } catch {
-          // tabs.create() can fail when no browser window is open (e.g. all windows
-          // were closed before the alarm fired). Fall back to creating a new window.
-          try {
-            await browser.windows.create({ url: browser.runtime.getURL('/stats.html') });
-          } catch (err) {
-            console.error('[tomate] failed to open stats tab or window:', err);
-          }
+          // tab creation can fail if no browser window is open
         }
       }
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      try {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-        });
-      } catch (err) {
-        console.error('[tomate] failed to show break-complete notification:', err);
-      }
+      const i18n = (key: string): string => { try { return browser.i18n.getMessage(key); } catch { return ''; } };
+      await browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+        title: state.phase === 'SHORT_BREAK'
+          ? (i18n('notificationShortBreakOver') || "Break's Over")
+          : (i18n('notificationLongBreakOver') || "Long Break's Over"),
+        message: state.phase === 'SHORT_BREAK'
+          ? (i18n('notificationShortBreakMessage') || 'Ready for another tomate?')
+          : (i18n('notificationLongBreakMessage') || "Refreshed? Let's go!"),
+      });
     }
 
     if (isActivePhase(completed.phase) && completed.endTime !== null) {

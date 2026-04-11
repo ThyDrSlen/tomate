@@ -77,6 +77,12 @@ export const getSessionHistory = async (days?: number): Promise<CompletedSession
   return sessions.filter((session) => session.date >= earliestKey);
 };
 
+export const getSessionsForYear = async (year: number): Promise<CompletedSession[]> => {
+  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  const prefix = String(year);
+  return sessions.filter((session) => session.date.startsWith(prefix));
+};
+
 export const getHeatmapData = async (days: number): Promise<Record<string, number>> => {
   const sessions = await getSessionHistory(days);
 
