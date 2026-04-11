@@ -3,13 +3,18 @@ import type { TimerPhase } from '@/lib/types';
 
 type ControlsProps = {
   phase: TimerPhase;
+  loading?: boolean;
   onStart: () => void;
   onAbandon: () => void;
   onAcceptLongBreak: () => void;
   onSkipLongBreak: () => void;
 };
 
+const disabledClass = 'disabled:opacity-60 disabled:cursor-not-allowed';
+
 export default function Controls(props: ControlsProps) {
+  const busy = () => props.loading ?? false;
+
   return (
     <div class="mt-5 flex gap-3 justify-center transition-opacity duration-200">
       <Switch>
@@ -17,43 +22,53 @@ export default function Controls(props: ControlsProps) {
           <button
             type="button"
             onClick={props.onStart}
-            class="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 active:bg-red-800 transition-colors"
+            disabled={busy()}
+            aria-busy={busy()}
+            class={`px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 active:bg-red-800 transition-colors ${disabledClass}`}
           >
-            Start
+            {busy() ? 'Starting…' : 'Start'}
           </button>
         </Match>
         <Match when={props.phase === 'WORKING'}>
           <button
             type="button"
             onClick={props.onAbandon}
-            class="px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
+            disabled={busy()}
+            aria-busy={busy()}
+            class={`px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors ${disabledClass}`}
           >
-            Abandon
+            {busy() ? 'Updating…' : 'Abandon'}
           </button>
         </Match>
         <Match when={props.phase === 'SHORT_BREAK' || props.phase === 'LONG_BREAK'}>
           <button
             type="button"
             onClick={props.onAbandon}
-            class="px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
+            disabled={busy()}
+            aria-busy={busy()}
+            class={`px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors ${disabledClass}`}
           >
-            Skip Break
+            {busy() ? 'Updating…' : 'Skip Break'}
           </button>
         </Match>
         <Match when={props.phase === 'BREAK_SUGGESTION'}>
           <button
             type="button"
             onClick={props.onAcceptLongBreak}
-            class="px-5 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors"
+            disabled={busy()}
+            aria-busy={busy()}
+            class={`px-5 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors ${disabledClass}`}
           >
-            Long Break
+            {busy() ? 'Updating…' : 'Long Break'}
           </button>
           <button
             type="button"
             onClick={props.onSkipLongBreak}
-            class="px-5 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
+            disabled={busy()}
+            aria-busy={busy()}
+            class={`px-5 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors ${disabledClass}`}
           >
-            Skip
+            {busy() ? 'Updating…' : 'Skip'}
           </button>
         </Match>
       </Switch>

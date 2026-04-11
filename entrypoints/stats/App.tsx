@@ -46,48 +46,74 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
 }
 
 export default function App() {
-  const [yearData] = createResource(() => getHeatmapData(365));
-  const [sessions] = createResource(() => getSessionHistory());
-  const [todayCount] = createResource(() => getTodayCount());
+  const [yearData, { refetch: refetchYearData }] = createResource(() =>
+    getHeatmapData(365).catch((err) => {
+      console.error('[tomate] failed to load heatmap data:', err);
+      throw err;
+    }),
+  );
+  const [sessions, { refetch: refetchSessions }] = createResource(() =>
+    getSessionHistory().catch((err) => {
+      console.error('[tomate] failed to load session history:', err);
+      throw err;
+    }),
+  );
+  const [todayCount, { refetch: refetchTodayCount }] = createResource(() =>
+    getTodayCount().catch((err) => {
+      console.error('[tomate] failed to load today count:', err);
+      throw err;
+    }),
+  );
 
-  const hasError = () => !!(sessions.error || yearData.error || todayCount.error);
-  const sessionList = () => sessions() ?? [];
+  const retryAll = () => {
+    refetchYearData();
+    refetchSessions();
+    refetchTodayCount();
+  };
 
-  const total = () => computeTotalCount(sessionList());
-  const week = () => computeWeekCount(sessionList());
-  const bestDay = () => computeBestDay(sessionList());
-  const streak = () => computeStreak(sessionList());
+  const total = () => computeTotalCount(sessions() ?? []);
+  const week = () => computeWeekCount(sessions() ?? []);
+  const bestDay = () => computeBestDay(sessions() ?? []);
+  const streak = () => computeStreak(sessions() ?? []);
+
+  const anyError = () => yearData.error || sessions.error || todayCount.error;
 
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
       <div class="max-w-[800px] mx-auto">
         <div class="flex items-center justify-between mb-6">
           <h1 class="text-2xl font-bold text-red-600">Tomate Stats</h1>
-          <Show when={sessionList().length > 0 && !hasError()}>
+          <Show when={(sessions() ?? []).length > 0 && !anyError()}>
             <button
               class="text-sm px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-100 transition-colors"
-              onClick={() => exportCSV(sessionList())}
+              onClick={() => exportCSV(sessions() ?? [])}
             >
               Export CSV
             </button>
           </Show>
         </div>
 
-        <Show when={hasError()}>
-          <div class="text-center py-8 text-red-500">
-            <p class="text-lg font-medium">Failed to load stats</p>
-            <p class="text-sm mt-1">Please close and reopen this page. If the problem persists, check your browser storage.</p>
+        <Show when={anyError()}>
+          <div class="text-center py-8">
+            <p class="text-lg text-red-600 font-medium">Failed to load stats.</p>
+            <p class="text-sm mt-1 text-gray-500">Please try refreshing.</p>
+            <button
+              class="mt-4 text-sm px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
+              onClick={retryAll}
+            >
+              Retry
+            </button>
           </div>
         </Show>
 
-        <Show when={!hasError() && sessionList().length === 0}>
+        <Show when={!anyError() && (sessions() ?? []).length === 0}>
           <div class="text-center py-8 text-gray-500 dark:text-gray-400">
             <p class="text-lg">No sessions yet</p>
             <p class="text-sm mt-1">Complete your first Pomodoro to see your stats here.</p>
           </div>
         </Show>
 
-        <Show when={!hasError() && sessionList().length > 0}>
+        <Show when={!anyError() && (sessions() ?? []).length > 0}>
           <div class="grid grid-cols-5 gap-3 mb-6">
             <StatCard label="Total tomates" value={total()} />
             <StatCard label="Today" value={todayCount() ?? 0} />

@@ -59,7 +59,7 @@ export default defineBackground(() => {
         break;
       }
       case 'BREAK_SUGGESTION': {
-        text = `${todayCount}✓`;
+        text = `${state.completedToday}✓`;
         color = BADGE_GOLD;
         break;
       }
@@ -95,13 +95,9 @@ export default defineBackground(() => {
   const persistCompletedSession = async (
     state: Awaited<ReturnType<typeof getTimerState>>,
     endTime: number,
-  ): Promise<boolean> => {
+  ): Promise<void> => {
     if (state.startTime === null || state.duration === null) {
-      console.warn('[tomate] persistCompletedSession: skipping — state.startTime is null', {
-        phase: state.phase,
-        sessionCount: state.sessionCount,
-      });
-      return false;
+      return;
     }
 
     const label = await getCurrentLabel();
@@ -110,13 +106,12 @@ export default defineBackground(() => {
       label,
       startTime: state.startTime,
       endTime,
-      date: toDateKey(endTime),
+      date: toDateKey(state.startTime),
       duration: state.duration,
     };
 
     await addCompletedSession(session);
     await setPendingCelebration(true);
-    return true;
   };
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
@@ -131,7 +126,6 @@ export default defineBackground(() => {
     await setTimerState(recovered);
 
     if (state.phase === 'WORKING') {
-      // Returns false (and logs a warning) when state.startTime is null — session is skipped.
       await persistCompletedSession(state, Date.now());
     }
 
@@ -236,30 +230,43 @@ export default defineBackground(() => {
     await setTimerState(completed);
 
     if (state.phase === 'WORKING') {
-      // Returns false (and logs a warning) when state.startTime is null — session is skipped.
       await persistCompletedSession(state, Date.now());
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-      });
-      if (typeof browser.tabs !== 'undefined' && config.openBreakTab !== false) {
+      try {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: '🍅 Tomate Complete!',
+          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+        });
+      } catch (err) {
+        console.error('[tomate] failed to show work-complete notification:', err);
+      }
+      if (config.openBreakTab !== false) {
         try {
           await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
-        } catch (err) {
-          console.warn('[tomate] browser.tabs.create() failed (no open window?):', err);
+        } catch {
+          // tabs.create() can fail when no browser window is open (e.g. all windows
+          // were closed before the alarm fired). Fall back to creating a new window.
+          try {
+            await browser.windows.create({ url: browser.runtime.getURL('/stats.html') });
+          } catch (err) {
+            console.error('[tomate] failed to open stats tab or window:', err);
+          }
         }
       }
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-      });
+      try {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+        });
+      } catch (err) {
+        console.error('[tomate] failed to show break-complete notification:', err);
+      }
     }
 
     if (isActivePhase(completed.phase) && completed.endTime !== null) {
