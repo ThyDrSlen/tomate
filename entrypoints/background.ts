@@ -22,7 +22,7 @@ import {
   setTimerState,
   toDateKey,
 } from '@/lib/storage';
-import type { CompletedSession, TimerConfig, TimerState } from '@/lib/types';
+import type { CompletedSession, TimerConfig } from '@/lib/types';
 
 export type MessageAction =
   | { action: 'START_TIMER' }
@@ -40,11 +40,8 @@ export default defineBackground(() => {
   const BADGE_GOLD = '#CA8A04';
   const badgeApi = browser.action;
 
-  const refreshBadge = async (prefetchedState?: TimerState, prefetchedCount?: number): Promise<void> => {
-    const [state, todayCount] = await Promise.all([
-      prefetchedState !== undefined ? Promise.resolve(prefetchedState) : getTimerState(),
-      prefetchedCount !== undefined ? Promise.resolve(prefetchedCount) : getTodayCount(),
-    ]);
+  const refreshBadge = async (): Promise<void> => {
+    const state = await getTimerState();
 
     let text = '';
     let color = BADGE_RED;
@@ -57,6 +54,7 @@ export default defineBackground(() => {
       }
       case 'SHORT_BREAK':
       case 'LONG_BREAK': {
+        // Badge shows static "BRK" — no count needed, skip storage read.
         text = 'BRK';
         color = BADGE_GREEN;
         break;
@@ -68,6 +66,7 @@ export default defineBackground(() => {
       }
       case 'IDLE':
       default: {
+        const todayCount = await getTodayCount();
         text = todayCount > 0 ? String(todayCount) : '';
         color = BADGE_RED;
         break;
@@ -143,16 +142,40 @@ export default defineBackground(() => {
   };
 
   const handleMessage = async (message: MessageAction) => {
-    const state = await getTimerState();
+    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
 
     switch (message.action) {
-      case 'GET_STATE': {
-        return state;
+      case 'START_TIMER': {
+        const nextState = startTimer(state, config);
+        await setTimerState(nextState);
+
+        if (nextState.endTime !== null) {
+          await scheduleTimerAlarm(nextState.endTime);
+          await startBadgeRefresh();
+        }
+
+        await refreshBadge();
+        return nextState;
       }
       case 'ABANDON_TIMER': {
         const nextState = abandonTimer(state);
         await setTimerState(nextState);
         await clearActiveAlarms();
+        await refreshBadge();
+        return nextState;
+      }
+      case 'GET_STATE': {
+        return state;
+      }
+      case 'ACCEPT_LONG_BREAK': {
+        const nextState = acceptLongBreak(state, config);
+        await setTimerState(nextState);
+
+        if (nextState.endTime !== null) {
+          await scheduleTimerAlarm(nextState.endTime);
+          await startBadgeRefresh();
+        }
+
         await refreshBadge();
         return nextState;
       }
@@ -163,52 +186,23 @@ export default defineBackground(() => {
         await refreshBadge();
         return nextState;
       }
-      default: {
-        const config = await getConfig();
-        switch (message.action) {
-          case 'START_TIMER': {
-            const nextState = startTimer(state, config);
-            await setTimerState(nextState);
+      case 'UPDATE_CONFIG': {
+        await setConfig(message.config);
+        const nextState = adjustDuration(state, message.config);
+        await setTimerState(nextState);
 
-            if (nextState.endTime !== null) {
-              await scheduleTimerAlarm(nextState.endTime);
-              await startBadgeRefresh();
-            }
-
-            await refreshBadge();
-            return nextState;
-          }
-          case 'ACCEPT_LONG_BREAK': {
-            const nextState = acceptLongBreak(state, config);
-            await setTimerState(nextState);
-
-            if (nextState.endTime !== null) {
-              await scheduleTimerAlarm(nextState.endTime);
-              await startBadgeRefresh();
-            }
-
-            await refreshBadge();
-            return nextState;
-          }
-          case 'UPDATE_CONFIG': {
-            await setConfig(message.config);
-            const nextState = adjustDuration(state, message.config);
-            await setTimerState(nextState);
-
-            if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
-              await scheduleTimerAlarm(nextState.endTime);
-              await startBadgeRefresh();
-            } else {
-              await clearActiveAlarms();
-            }
-
-            await refreshBadge();
-            return nextState;
-          }
-          default: {
-            return state;
-          }
+        if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
+          await scheduleTimerAlarm(nextState.endTime);
+          await startBadgeRefresh();
+        } else {
+          await clearActiveAlarms();
         }
+
+        await refreshBadge();
+        return nextState;
+      }
+      default: {
+        return state;
       }
     }
   };
@@ -270,6 +264,6 @@ export default defineBackground(() => {
       await clearActiveAlarms();
     }
 
-    await refreshBadge(completed, completed.completedToday);
+    await refreshBadge();
   });
 });
