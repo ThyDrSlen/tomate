@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from 'solid-js';
+import { createSignal, onMount } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { getConfig, setConfig } from '@/lib/storage';
@@ -97,9 +97,9 @@ export default function App() {
             Reset to defaults
           </button>
 
-          <Show when={saved()}>
-            <span class="text-sm text-green-600">Settings saved ✓</span>
-          </Show>
+          <div aria-live="polite" role="status" class="text-sm h-5">
+            <span class={saved() ? 'text-green-600 dark:text-green-400' : ''}>{saved() ? 'Settings saved ✓' : ''}</span>
+          </div>
         </div>
       </div>
     </div>
