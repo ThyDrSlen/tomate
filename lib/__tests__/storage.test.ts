@@ -107,6 +107,25 @@ describe('storage helpers', () => {
     await expect(getSessionHistory(2)).resolves.toEqual([withinRange, today]);
   });
 
+  it('includes sessions on the exact boundary day in session history', async () => {
+    // Mock "now" to be just past midnight so Date.now() - (days-1)*DAY_MS lands on the
+    // boundary day's date key — verifying we don't accidentally exclude it.
+    vi.spyOn(Date, 'now').mockReturnValue(new Date(2026, 2, 20, 0, 1, 0).getTime());
+
+    const boundaryDay = createSession(new Date(2026, 2, 18, 23, 59, 0).getTime()); // 2026-03-18
+    const withinRange = createSession(new Date(2026, 2, 19, 9, 0, 0).getTime()); // 2026-03-19
+    const today = createSession(new Date(2026, 2, 20, 0, 0, 30).getTime()); // 2026-03-20
+    const outsideRange = createSession(new Date(2026, 2, 17, 9, 0, 0).getTime()); // 2026-03-17
+
+    await addCompletedSession(boundaryDay);
+    await addCompletedSession(withinRange);
+    await addCompletedSession(today);
+    await addCompletedSession(outsideRange);
+
+    // Requesting 3 days: today (Mar 20), yesterday (Mar 19), and boundary (Mar 18)
+    await expect(getSessionHistory(3)).resolves.toEqual([boundaryDay, withinRange, today]);
+  });
+
   it('aggregates heatmap counts by local date key', async () => {
     const dateA = new Date(2026, 2, 15, 9, 0, 0).getTime();
     const dateB = new Date(2026, 2, 16, 14, 0, 0).getTime();
