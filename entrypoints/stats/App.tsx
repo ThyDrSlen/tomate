@@ -90,7 +90,7 @@ export default function App() {
             <StatCard
               label="Best day"
               value={bestDay()?.count ?? '—'}
-              sublabel={bestDay()?.date}
+              sublabel={bestDay()?.date ?? '—'}
             />
             <StatCard
               label="Current streak"
