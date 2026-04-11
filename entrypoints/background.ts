@@ -237,6 +237,13 @@ export default defineBackground(() => {
         title: '🍅 Tomate Complete!',
         message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
       });
+      if (config.openBreakTab !== false) {
+        try {
+          await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
+        } catch {
+          // tab creation can fail if no browser window is open
+        }
+      }
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
