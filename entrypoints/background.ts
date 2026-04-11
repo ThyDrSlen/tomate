@@ -24,6 +24,48 @@ import {
 } from '@/lib/storage';
 import type { CompletedSession, TimerConfig } from '@/lib/types';
 
+const MAX_BLOCKED_SITES = 100;
+
+type DnrRule = {
+  id: number;
+  priority: number;
+  action: { type: string };
+  condition: { urlFilter: string; resourceTypes: string[] };
+};
+
+declare const chrome: {
+  declarativeNetRequest: {
+    getDynamicRules(): Promise<DnrRule[]>;
+    updateDynamicRules(options: { removeRuleIds: number[]; addRules: DnrRule[] }): Promise<void>;
+  };
+};
+
+const applyBlockingRules = async (sites: string[]): Promise<void> => {
+  const sitesToBlock = sites.slice(0, MAX_BLOCKED_SITES);
+
+  const newRules: DnrRule[] = sitesToBlock.map((site, index) => ({
+    id: index + 1,
+    priority: 1,
+    action: { type: 'block' },
+    condition: {
+      urlFilter: site,
+      resourceTypes: ['main_frame'],
+    },
+  }));
+
+  const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
+  const existingIds = existingRules.map((r) => r.id);
+
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: existingIds,
+      addRules: newRules,
+    });
+  } catch (e) {
+    console.error('[tomate] Failed to update blocking rules:', e);
+  }
+};
+
 export type MessageAction =
   | { action: 'START_TIMER' }
   | { action: 'ABANDON_TIMER' }
@@ -139,6 +181,20 @@ export default defineBackground(() => {
     await refreshBadge();
   };
 
+  const reschedulePendingTimer = async (): Promise<void> => {
+    const state = await getTimerState();
+    const activePhases: string[] = ['WORKING', 'SHORT_BREAK', 'LONG_BREAK'];
+
+    if (activePhases.includes(state.phase) && state.endTime !== null && state.endTime > Date.now()) {
+      await browser.alarms.clear(ALARM_TIMER);
+      await browser.alarms.create(ALARM_TIMER, { when: state.endTime });
+      await startBadgeRefresh();
+      await refreshBadge();
+    } else {
+      await recoverFromMissedAlarm();
+    }
+  };
+
   const handleMessage = async (message: MessageAction) => {
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
 
@@ -159,6 +215,9 @@ export default defineBackground(() => {
         const nextState = abandonTimer(state);
         await setTimerState(nextState);
         await clearActiveAlarms();
+        if (state.phase === 'WORKING') {
+          await applyBlockingRules([]);
+        }
         await refreshBadge();
         return nextState;
       }
@@ -205,56 +264,92 @@ export default defineBackground(() => {
     }
   };
 
-  browser.runtime.onInstalled.addListener(async () => {
-    await recoverFromMissedAlarm();
+  browser.runtime.onInstalled.addListener(async (details) => {
+    if (details.reason === 'update' || details.reason === 'chrome_update') {
+      await reschedulePendingTimer();
+    } else {
+      // Fresh install or unknown reason — run standard recovery
+      await recoverFromMissedAlarm();
+    }
   });
 
   browser.runtime.onStartup.addListener(async () => {
     await recoverFromMissedAlarm();
   });
 
+  browser.storage.onChanged.addListener((changes: Record<string, { newValue?: unknown }>, area: string) => {
+    if (area !== 'local' || !('blockedSites' in changes)) {
+      return;
+    }
+
+    getTimerState()
+      .then((state) => {
+        if (state.phase !== 'WORKING') {
+          return;
+        }
+        const sites = (changes['blockedSites'].newValue as string[]) ?? [];
+        return applyBlockingRules(sites);
+      })
+      .catch((e) => console.error('[tomate] Failed to apply blocking rules on storage change:', e));
+  });
+
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
-    if (alarm.name === ALARM_BADGE_REFRESH) {
+    try {
+      if (alarm.name === ALARM_BADGE_REFRESH) {
+        await refreshBadge();
+        return;
+      }
+
+      if (alarm.name !== ALARM_TIMER) {
+        return;
+      }
+
+      const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+      const completed = completeTimer(state, config);
+      await setTimerState(completed);
+
+      if (state.phase === 'WORKING') {
+        await persistCompletedSession(state, Date.now());
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: '🍅 Tomate Complete!',
+          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+        });
+      }
+
+      if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+        });
+      }
+
+      if (isActivePhase(completed.phase) && completed.endTime !== null) {
+        await scheduleTimerAlarm(completed.endTime);
+        await startBadgeRefresh();
+      } else {
+        await clearActiveAlarms();
+      }
+
+      // Clear blocking rules whenever we leave the WORKING phase
+      if (state.phase === 'WORKING') {
+        await applyBlockingRules([]);
+      }
+
       await refreshBadge();
-      return;
+    } catch (err) {
+      console.error('[tomate] onAlarm error:', err);
+      try {
+        await badgeApi.setBadgeText({ text: '!' });
+        await badgeApi.setBadgeBackgroundColor({ color: BADGE_RED });
+      } catch {
+        // badge update failed — nothing more we can do
+      }
     }
-
-    if (alarm.name !== ALARM_TIMER) {
-      return;
-    }
-
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const completed = completeTimer(state, config);
-    await setTimerState(completed);
-
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-      });
-    }
-
-    if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-        message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-      });
-    }
-
-    if (isActivePhase(completed.phase) && completed.endTime !== null) {
-      await scheduleTimerAlarm(completed.endTime);
-      await startBadgeRefresh();
-    } else {
-      await clearActiveAlarms();
-    }
-
-    await refreshBadge();
   });
 });

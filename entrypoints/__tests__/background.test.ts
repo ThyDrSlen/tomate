@@ -45,6 +45,22 @@ describe('background service worker', () => {
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+
+    // Provide the chrome global used by applyBlockingRules
+    (globalThis as typeof globalThis & { chrome: unknown }).chrome = {
+      declarativeNetRequest: {
+        getDynamicRules: vi.fn().mockResolvedValue([]),
+        updateDynamicRules: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+
+    // Provide a no-op storage.onChanged listener to avoid "not implemented" errors
+    fakeBrowser.storage.onChanged = {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      hasListener: vi.fn().mockReturnValue(false),
+      hasListeners: vi.fn().mockReturnValue(false),
+    } as unknown as typeof fakeBrowser.storage.onChanged;
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
