@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Show, Switch, Match } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -19,12 +19,22 @@ import TaskLabel from '@/components/TaskLabel';
 import TodayCount from '@/components/TodayCount';
 import Heatmap from '@/components/Heatmap';
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 export default function App() {
   const [state, setState] = createSignal<TimerState>(INITIAL_STATE);
   const [remaining, setRemaining] = createSignal(0);
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [connectionError, setConnectionError] = createSignal(false);
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
@@ -32,16 +42,31 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    let currentState: TimerState;
+    try {
+      const [timerState, pending, storedLabel] = await Promise.all([
+        withTimeout(
+          browser.runtime.sendMessage({ action: 'GET_STATE' }) as Promise<TimerState>,
+          5000,
+        ),
+        getPendingCelebration(),
+        getCurrentLabel(),
+      ]);
 
-    const pending = await getPendingCelebration();
-    if (pending) {
-      playCelebration('work');
-      await setPendingCelebration(false);
+      currentState = timerState;
+      setState(currentState);
+
+      if (pending) {
+        playCelebration('work');
+        await setPendingCelebration(false);
+      }
+
+      setLabel(storedLabel);
+    } catch {
+      setConnectionError(true);
+      return;
     }
 
-    setLabel(await getCurrentLabel());
     await refreshStats();
 
     browser.storage.onChanged.addListener(refreshStats);
@@ -115,42 +140,52 @@ export default function App() {
         </button>
       </div>
 
-      <TimerRing progress={progress()} phase={state().phase} />
-      <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
-
-      <div class="text-sm text-gray-500 mt-1">
-        <Switch>
-          <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
-          <Match when={state().phase === 'WORKING'}>Working</Match>
-          <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
-          <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
-          <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
-        </Switch>
-      </div>
-
-      <TaskLabel value={label()} onChange={handleLabelChange} />
-
-      <Controls
-        phase={state().phase}
-        onStart={startTimer}
-        onAbandon={abandonTimer}
-        onAcceptLongBreak={acceptLongBreak}
-        onSkipLongBreak={skipLongBreak}
-      />
-
-      <TodayCount count={todayCount()} />
-
-      <div class="mt-2 w-full">
-        <Heatmap days={120} data={heatmapData()} />
-      </div>
-
-      <button
-        type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
-        class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
+      <Show
+        when={!connectionError()}
+        fallback={
+          <div class="flex flex-col items-center justify-center flex-1 text-center gap-2 mt-8">
+            <p class="text-red-500 font-medium">Could not connect to background service.</p>
+            <p class="text-gray-500 text-sm">Try closing and reopening the popup.</p>
+          </div>
+        }
       >
-        View all stats →
-      </button>
+        <TimerRing progress={progress()} phase={state().phase} />
+        <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
+
+        <div class="text-sm text-gray-500 mt-1">
+          <Switch>
+            <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
+            <Match when={state().phase === 'WORKING'}>Working</Match>
+            <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
+            <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
+            <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
+          </Switch>
+        </div>
+
+        <TaskLabel value={label()} onChange={handleLabelChange} />
+
+        <Controls
+          phase={state().phase}
+          onStart={startTimer}
+          onAbandon={abandonTimer}
+          onAcceptLongBreak={acceptLongBreak}
+          onSkipLongBreak={skipLongBreak}
+        />
+
+        <TodayCount count={todayCount()} />
+
+        <div class="mt-2 w-full">
+          <Heatmap days={120} data={heatmapData()} />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+          class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
+        >
+          View all stats →
+        </button>
+      </Show>
     </div>
   );
 }
