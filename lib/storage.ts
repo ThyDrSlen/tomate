@@ -68,8 +68,7 @@ export const getSessionHistory = async (days?: number): Promise<CompletedSession
     return [];
   }
 
-  const today = startOfLocalDay(Date.now()).getTime();
-  const earliestKey = toDateKey(today - (days - 1) * DAY_MS);
+  const earliestKey = toDateKey(Date.now() - (days - 1) * DAY_MS);
 
   return sessions.filter((session) => session.date >= earliestKey);
 };
