@@ -17,6 +17,7 @@ export type TimerState = {
   sessionCount: number;
   cyclePosition: number;
   completedToday: number;
+  lastWorkDate: string | null;
 };
 
 export type CompletedSession = {
@@ -45,4 +46,5 @@ export const INITIAL_STATE: TimerState = {
   sessionCount: 0,
   cyclePosition: 0,
   completedToday: 0,
+  lastWorkDate: null,
 };

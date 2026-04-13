@@ -229,6 +229,7 @@ describe('timer state machine', () => {
       duration: 500,
       sessionCount: 1,
       completedToday: 1,
+      lastWorkDate: '1969-12-31',
     });
   });
 

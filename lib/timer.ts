@@ -2,6 +2,14 @@ import { INITIAL_STATE, type TimerConfig, type TimerPhase, type TimerState } fro
 
 const getNow = (now?: number): number => now ?? Date.now();
 
+const toDateKey = (timestamp: number): string => {
+  const d = new Date(timestamp);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const toIdleState = (state: TimerState): TimerState => ({
   ...state,
   ...INITIAL_STATE,
@@ -51,6 +59,7 @@ export const completeTimer = (state: TimerState, config: TimerConfig, now?: numb
         ...state,
         sessionCount: state.sessionCount + 1,
         completedToday: state.completedToday + 1,
+        lastWorkDate: toDateKey(currentTime),
       };
 
       if (state.cyclePosition === 3) {
