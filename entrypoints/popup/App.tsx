@@ -27,10 +27,18 @@ export default function App() {
   const [todayCount, setTodayCount] = createSignal(0);
   const [dailyGoal, setDailyGoal] = createSignal<number | undefined>(undefined);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [actionPending, setActionPending] = createSignal(false);
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
     setHeatmapData(await getHeatmapData(120));
+  };
+
+  // Only re-fetch stats when the sessions key changes, not on every storage write.
+  const onSessionsChanged = (changes: Record<string, unknown>) => {
+    if ('sessions' in changes) {
+      void refreshStats();
+    }
   };
 
   onMount(async () => {
@@ -49,8 +57,8 @@ export default function App() {
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    browser.storage.onChanged.addListener(onSessionsChanged);
+    onCleanup(() => browser.storage.onChanged.removeListener(onSessionsChanged));
   });
 
   createEffect(() => {
@@ -79,25 +87,21 @@ export default function App() {
     return 1 - remaining() / s.duration;
   };
 
-  const startTimer = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'START_TIMER' });
-    setState(newState as TimerState);
+  const dispatchAction = async (action: string) => {
+    if (actionPending()) return;
+    setActionPending(true);
+    try {
+      const newState = await browser.runtime.sendMessage({ action });
+      setState(newState as TimerState);
+    } finally {
+      setActionPending(false);
+    }
   };
 
-  const abandonTimer = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'ABANDON_TIMER' });
-    setState(newState as TimerState);
-  };
-
-  const acceptLongBreak = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
-    setState(newState as TimerState);
-  };
-
-  const skipLongBreak = async () => {
-    const newState = await browser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
-    setState(newState as TimerState);
-  };
+  const startTimer = () => dispatchAction('START_TIMER');
+  const abandonTimer = () => dispatchAction('ABANDON_TIMER');
+  const acceptLongBreak = () => dispatchAction('ACCEPT_LONG_BREAK');
+  const skipLongBreak = () => dispatchAction('SKIP_LONG_BREAK');
 
   let labelTimeout: ReturnType<typeof setTimeout>;
   const handleLabelChange = (value: string) => {
@@ -137,6 +141,7 @@ export default function App() {
 
       <Controls
         phase={state().phase}
+        disabled={actionPending()}
         onStart={startTimer}
         onAbandon={abandonTimer}
         onAcceptLongBreak={acceptLongBreak}
@@ -151,7 +156,7 @@ export default function App() {
 
       <button
         type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html') })}
         class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
       >
         View all stats →
