@@ -45,10 +45,26 @@ export const setTimerState = async (state: TimerState): Promise<void> => {
   await browser.storage.local.set({ [KEYS.TIMER_STATE]: state });
 };
 
-export const getConfig = async (): Promise<TimerConfig> => {
-  const stored = await getStoredValue<Partial<TimerConfig>>(KEYS.CONFIG);
-  return stored ? { ...DEFAULT_CONFIG, ...stored } : DEFAULT_CONFIG;
+const toPositiveNumber = (value: unknown, fallback: number): number => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 };
+
+const validateConfig = (raw: unknown): TimerConfig => {
+  if (raw === null || typeof raw !== 'object') return DEFAULT_CONFIG;
+  const r = raw as Record<string, unknown>;
+  return {
+    workDuration: toPositiveNumber(r.workDuration, DEFAULT_CONFIG.workDuration),
+    shortBreakDuration: toPositiveNumber(r.shortBreakDuration, DEFAULT_CONFIG.shortBreakDuration),
+    longBreakDuration: toPositiveNumber(r.longBreakDuration, DEFAULT_CONFIG.longBreakDuration),
+    openBreakTab: typeof r.openBreakTab === 'boolean' ? r.openBreakTab : DEFAULT_CONFIG.openBreakTab,
+    playCompletionSound: typeof r.playCompletionSound === 'boolean' ? r.playCompletionSound : DEFAULT_CONFIG.playCompletionSound,
+    dailyGoal: typeof r.dailyGoal === 'number' && r.dailyGoal > 0 ? r.dailyGoal : DEFAULT_CONFIG.dailyGoal,
+  };
+};
+
+export const getConfig = async (): Promise<TimerConfig> =>
+  validateConfig(await getStoredValue<unknown>(KEYS.CONFIG));
 
 export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });

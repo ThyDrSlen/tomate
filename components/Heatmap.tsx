@@ -189,6 +189,8 @@ export default function Heatmap(props: HeatmapProps) {
                 {(cell) =>
                   cell ? (
                     <div
+                      role="gridcell"
+                      tabindex={0}
                       class="rounded-sm"
                       style={{
                         width: `${cellSize()}px`,
@@ -196,6 +198,7 @@ export default function Heatmap(props: HeatmapProps) {
                         "background-color": getIntensityColor(cell.count),
                       }}
                       title={tooltipText(cell)}
+                      aria-label={tooltipText(cell)}
                     />
                   ) : (
                     <div

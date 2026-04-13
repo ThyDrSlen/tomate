@@ -273,4 +273,21 @@ describe('background service worker', () => {
       }),
     );
   });
+
+  it('ignores messages with missing action field (issue #238)', async () => {
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ notAnAction: 'foo' });
+
+    // Should return undefined (no response) rather than stale state
+    expect(response).toBeUndefined();
+  });
+
+  it('ignores messages with misspelled action (issue #238)', async () => {
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'STRRT_TIMER' });
+
+    expect(response).toBeUndefined();
+  });
 });

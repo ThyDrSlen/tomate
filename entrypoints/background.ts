@@ -141,7 +141,24 @@ export default defineBackground(() => {
     await refreshBadge();
   };
 
+  const VALID_ACTIONS = new Set([
+    'START_TIMER',
+    'ABANDON_TIMER',
+    'GET_STATE',
+    'ACCEPT_LONG_BREAK',
+    'SKIP_LONG_BREAK',
+    'UPDATE_CONFIG',
+  ]);
+
   const handleMessage = async (message: MessageAction) => {
+    if (
+      typeof message !== 'object' ||
+      message === null ||
+      !VALID_ACTIONS.has((message as { action?: unknown }).action as string)
+    ) {
+      return;
+    }
+
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
 
     switch (message.action) {
@@ -237,7 +254,15 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+  browser.runtime.onMessage.addListener((message, sender) => {
+    // Reject messages from other extensions; allow messages from our own
+    // extension pages (sender.id === our id) and from within the service
+    // worker itself (sender.id may be absent in some environments).
+    if (sender.id !== undefined && sender.id !== browser.runtime.id) {
+      return;
+    }
+    return handleMessage(message as MessageAction);
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
