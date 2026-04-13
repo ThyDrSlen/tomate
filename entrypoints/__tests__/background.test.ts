@@ -270,7 +270,7 @@ describe('background service worker', () => {
 
       // No new alarms created (alarm set should remain the same)
       const alarmsAfter = await fakeBrowser.alarms.getAll();
-      expect(alarmsAfter.map((a) => a.name).sort()).toEqual(alarmsBefore.map((a) => a.name).sort());
+      expect(alarmsAfter.map((a: { name: string }) => a.name).sort()).toEqual(alarmsBefore.map((a: { name: string }) => a.name).sort());
 
       // Badge was updated
       expect(fakeBrowser.action.setBadgeText).toHaveBeenCalled();
