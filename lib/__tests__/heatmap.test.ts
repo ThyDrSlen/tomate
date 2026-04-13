@@ -5,20 +5,20 @@ import { describe, expect, it } from 'vitest';
 
 type HeatmapCell = { date: string; count: number; dayOfWeek: number };
 
-const INTENSITY_COLORS = [
-  '#F3F4F6',
-  '#FCA5A5',
-  '#EF4444',
-  '#DC2626',
-  '#991B1B',
+const INTENSITY_CLASSES = [
+  'bg-gray-100 dark:bg-gray-700',
+  'bg-red-300  dark:bg-red-900',
+  'bg-red-500  dark:bg-red-800',
+  'bg-red-600  dark:bg-red-700',
+  'bg-red-900  dark:bg-red-600',
 ] as const;
 
-const getIntensityColor = (count: number): string => {
-  if (count === 0) return INTENSITY_COLORS[0];
-  if (count === 1) return INTENSITY_COLORS[1];
-  if (count <= 3) return INTENSITY_COLORS[2];
-  if (count <= 5) return INTENSITY_COLORS[3];
-  return INTENSITY_COLORS[4];
+const getIntensityClass = (count: number): string => {
+  if (count === 0) return INTENSITY_CLASSES[0];
+  if (count === 1) return INTENSITY_CLASSES[1];
+  if (count <= 3) return INTENSITY_CLASSES[2];
+  if (count <= 5) return INTENSITY_CLASSES[3];
+  return INTENSITY_CLASSES[4];
 };
 
 const toDateKey = (date: Date): string => {
@@ -44,37 +44,37 @@ const generateHeatmapGrid = (data: Record<string, number>, days: number): Heatma
   return cells;
 };
 
-describe('getIntensityColor', () => {
-  it('returns the empty colour for count 0', () => {
-    expect(getIntensityColor(0)).toBe('#F3F4F6');
+describe('getIntensityClass', () => {
+  it('returns the empty class for count 0', () => {
+    expect(getIntensityClass(0)).toBe('bg-gray-100 dark:bg-gray-700');
   });
 
-  it('returns the lightest red for count 1', () => {
-    expect(getIntensityColor(1)).toBe('#FCA5A5');
+  it('returns the lightest red class for count 1', () => {
+    expect(getIntensityClass(1)).toBe('bg-red-300  dark:bg-red-900');
   });
 
-  it('returns the second tier for count 2', () => {
-    expect(getIntensityColor(2)).toBe('#EF4444');
+  it('returns the second tier class for count 2', () => {
+    expect(getIntensityClass(2)).toBe('bg-red-500  dark:bg-red-800');
   });
 
-  it('returns the second tier for count 3', () => {
-    expect(getIntensityColor(3)).toBe('#EF4444');
+  it('returns the second tier class for count 3', () => {
+    expect(getIntensityClass(3)).toBe('bg-red-500  dark:bg-red-800');
   });
 
-  it('returns the third tier for count 4', () => {
-    expect(getIntensityColor(4)).toBe('#DC2626');
+  it('returns the third tier class for count 4', () => {
+    expect(getIntensityClass(4)).toBe('bg-red-600  dark:bg-red-700');
   });
 
-  it('returns the third tier for count 5', () => {
-    expect(getIntensityColor(5)).toBe('#DC2626');
+  it('returns the third tier class for count 5', () => {
+    expect(getIntensityClass(5)).toBe('bg-red-600  dark:bg-red-700');
   });
 
-  it('returns the darkest red for count 6', () => {
-    expect(getIntensityColor(6)).toBe('#991B1B');
+  it('returns the darkest red class for count 6', () => {
+    expect(getIntensityClass(6)).toBe('bg-red-900  dark:bg-red-600');
   });
 
-  it('returns the darkest red for high counts', () => {
-    expect(getIntensityColor(100)).toBe('#991B1B');
+  it('returns the darkest red class for high counts', () => {
+    expect(getIntensityClass(100)).toBe('bg-red-900  dark:bg-red-600');
   });
 });
 
