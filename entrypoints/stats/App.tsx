@@ -75,9 +75,12 @@ export default function App() {
         </div>
 
         <Show when={(sessions() ?? []).length === 0}>
-          <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-            <p class="text-lg">No sessions yet</p>
-            <p class="text-sm mt-1">Complete your first Pomodoro to see your stats here.</p>
+          <div class="flex flex-col items-center justify-center py-20 text-center">
+            <span class="text-6xl mb-4" role="img" aria-label="tomato">🍅</span>
+            <h2 class="text-xl font-semibold text-gray-700 mb-2">No sessions yet</h2>
+            <p class="text-sm text-gray-500 max-w-xs">
+              Complete your first Pomodoro to see your stats here.
+            </p>
           </div>
         </Show>
 
