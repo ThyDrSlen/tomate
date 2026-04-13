@@ -30,10 +30,17 @@ import type { CompletedSession, TimerConfig } from '@/lib/types';
  */
 const MAX_DNR_RULES = 4990;
 
+type DnrRule = {
+  id: number;
+  priority: number;
+  action: { type: string };
+  condition: { urlFilter: string; resourceTypes: string[] };
+};
+
 type DnrApi = {
   getDynamicRules(): Promise<{ id: number }[]>;
   updateDynamicRules(opts: {
-    addRules?: chrome.declarativeNetRequest.Rule[];
+    addRules?: DnrRule[];
     removeRuleIds?: number[];
   }): Promise<void>;
 };
@@ -63,7 +70,7 @@ const applyBlockingRules = async (sites: string[]): Promise<void> => {
   const removeRuleIds = existing.map((r) => r.id);
 
   // Build new rules: one for the apex domain, one for *.domain
-  const addRules: chrome.declarativeNetRequest.Rule[] = [];
+  const addRules: DnrRule[] = [];
   sanitised.forEach((host, i) => {
     const baseId = i * 2 + 1; // 1-based, step 2
     addRules.push(
