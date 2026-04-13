@@ -41,7 +41,7 @@ export default defineBackground(() => {
   const badgeApi = browser.action;
 
   const refreshBadge = async (): Promise<void> => {
-    const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
+    const state = await getTimerState();
 
     let text = '';
     let color = BADGE_RED;
@@ -54,17 +54,19 @@ export default defineBackground(() => {
       }
       case 'SHORT_BREAK':
       case 'LONG_BREAK': {
+        // Badge shows static "BRK" — no count needed, skip storage read.
         text = 'BRK';
         color = BADGE_GREEN;
         break;
       }
       case 'BREAK_SUGGESTION': {
-        text = `${todayCount}✓`;
+        text = `${await getTodayCount()}✓`;
         color = BADGE_GOLD;
         break;
       }
       case 'IDLE':
       default: {
+        const todayCount = await getTodayCount();
         text = todayCount > 0 ? String(todayCount) : '';
         color = BADGE_RED;
         break;
@@ -142,10 +144,11 @@ export default defineBackground(() => {
   };
 
   const handleMessage = async (message: MessageAction) => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    const state = await getTimerState();
 
     switch (message.action) {
       case 'START_TIMER': {
+        const config = await getConfig();
         const nextState = startTimer(state, config);
         await setTimerState(nextState);
 
@@ -168,6 +171,7 @@ export default defineBackground(() => {
         return state;
       }
       case 'ACCEPT_LONG_BREAK': {
+        const config = await getConfig();
         const nextState = acceptLongBreak(state, config);
         await setTimerState(nextState);
 

@@ -1,4 +1,4 @@
-import { createResource, For, Show } from 'solid-js';
+import { createMemo, createResource, For, Show } from 'solid-js';
 
 import { getConfig, getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
@@ -54,10 +54,10 @@ export default function App() {
   const dailyGoal = () => config()?.dailyGoal ?? 8;
   const goalProgress = () => Math.min(100, Math.round(((todayCount() ?? 0) / dailyGoal()) * 100));
 
-  const total = () => computeTotalCount(sessions() ?? []);
-  const week = () => computeWeekCount(sessions() ?? []);
-  const bestDay = () => computeBestDay(sessions() ?? []);
-  const streak = () => computeStreak(sessions() ?? []);
+  const total = createMemo(() => computeTotalCount(sessions() ?? []));
+  const week = createMemo(() => computeWeekCount(sessions() ?? []));
+  const bestDay = createMemo(() => computeBestDay(sessions() ?? []));
+  const streak = createMemo(() => computeStreak(sessions() ?? []));
 
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">

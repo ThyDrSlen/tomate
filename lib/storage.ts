@@ -18,6 +18,7 @@ const KEYS = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
+const MAX_SESSIONS = 2000;
 
 const startOfLocalDay = (timestamp: number): Date => {
   const date = new Date(timestamp);
@@ -56,7 +57,9 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
 
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  sessions.push(session);
+  if (sessions.length > MAX_SESSIONS) sessions.splice(0, sessions.length - MAX_SESSIONS);
+  await browser.storage.local.set({ [KEYS.SESSIONS]: sessions });
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
@@ -89,7 +92,11 @@ export const getTodayCount = async (): Promise<number> => {
   const todayKey = toDateKey(Date.now());
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
 
-  return sessions.filter((session) => session.date === todayKey).length;
+  let count = 0;
+  for (const session of sessions) {
+    if (session.date === todayKey) count++;
+  }
+  return count;
 };
 
 export const getPendingCelebration = async (): Promise<boolean> =>
