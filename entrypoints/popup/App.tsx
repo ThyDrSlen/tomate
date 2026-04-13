@@ -4,6 +4,7 @@ import { browser } from 'wxt/browser';
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
 import {
+  getConfig,
   getPendingCelebration,
   setPendingCelebration,
   getCurrentLabel,
@@ -24,6 +25,7 @@ export default function App() {
   const [remaining, setRemaining] = createSignal(0);
   const [label, setLabel] = createSignal('');
   const [todayCount, setTodayCount] = createSignal(0);
+  const [dailyGoal, setDailyGoal] = createSignal<number | undefined>(undefined);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
 
   const refreshStats = async () => {
@@ -33,16 +35,18 @@ export default function App() {
   };
 
   onMount(async () => {
-    const [currentState, pending, currentLabel] = await Promise.all([
+    const [currentState, pending, currentLabel, config] = await Promise.all([
       browser.runtime.sendMessage({ action: 'GET_STATE' }),
       getPendingCelebration(),
       getCurrentLabel(),
+      getConfig(),
     ]);
 
     setState(currentState as TimerState);
+    setDailyGoal(config.dailyGoal);
 
     if (pending) {
-      playCelebration('work');
+      playCelebration('work', config.playCompletionSound);
       await setPendingCelebration(false);
     }
 
@@ -143,7 +147,7 @@ export default function App() {
         onSkipLongBreak={skipLongBreak}
       />
 
-      <TodayCount count={todayCount()} />
+      <TodayCount count={todayCount()} goal={dailyGoal()} />
 
       <div class="mt-2 w-full">
         <Heatmap days={120} data={heatmapData()} />
