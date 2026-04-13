@@ -273,4 +273,79 @@ describe('background service worker', () => {
       }),
     );
   });
+
+  describe('handleMessage storage failure fallback', () => {
+    it('returns current state and does not update storage when setTimerState fails for START_TIMER', async () => {
+      const initialState = createState({ phase: 'IDLE', completedToday: 1 });
+      await setTimerState(initialState);
+      await initBackground();
+
+      const storageModule = await import('@/lib/storage');
+      vi.spyOn(storageModule, 'setTimerState').mockRejectedValueOnce(new Error('QuotaExceededError'));
+
+      const response = await fakeBrowser.runtime.sendMessage({ action: 'START_TIMER' });
+
+      // Should return the pre-failure state (not the new working state)
+      expect(response).toEqual(initialState);
+      // Storage should still reflect the initial state (write failed)
+      await expect(getTimerState()).resolves.toEqual(initialState);
+    });
+
+    it('returns current state when setTimerState fails for ABANDON_TIMER', async () => {
+      const activeState = createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 5_000,
+        duration: 4_000,
+      });
+      await setTimerState(activeState);
+      await initBackground();
+
+      const storageModule = await import('@/lib/storage');
+      vi.spyOn(storageModule, 'setTimerState').mockRejectedValueOnce(new Error('QuotaExceededError'));
+
+      const response = await fakeBrowser.runtime.sendMessage({ action: 'ABANDON_TIMER' });
+
+      expect(response).toEqual(activeState);
+      await expect(getTimerState()).resolves.toEqual(activeState);
+    });
+
+    it('returns current state when setTimerState fails for SKIP_LONG_BREAK', async () => {
+      const breakSuggestionState = createState({
+        phase: 'BREAK_SUGGESTION',
+        sessionCount: 4,
+        cyclePosition: 3,
+        completedToday: 4,
+      });
+      await setTimerState(breakSuggestionState);
+      await initBackground();
+
+      const storageModule = await import('@/lib/storage');
+      vi.spyOn(storageModule, 'setTimerState').mockRejectedValueOnce(new Error('QuotaExceededError'));
+
+      const response = await fakeBrowser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
+
+      expect(response).toEqual(breakSuggestionState);
+      await expect(getTimerState()).resolves.toEqual(breakSuggestionState);
+    });
+
+    it('returns current state when setConfig fails for UPDATE_CONFIG', async () => {
+      const activeState = createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 5_000,
+        duration: 4_000,
+      });
+      await setTimerState(activeState);
+      await initBackground();
+
+      const storageModule = await import('@/lib/storage');
+      vi.spyOn(storageModule, 'setConfig').mockRejectedValueOnce(new Error('QuotaExceededError'));
+
+      const updatedConfig = createConfig({ workDuration: 30_000 });
+      const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: updatedConfig });
+
+      expect(response).toEqual(activeState);
+    });
+  });
 });
