@@ -141,7 +141,7 @@ export default function Heatmap(props: HeatmapProps) {
             const width = () => (nextCol() - ml.column) * (cellSize() + gap);
             return (
               <span
-                class="text-[9px] text-gray-400 inline-block overflow-hidden"
+                class="text-[9px] text-gray-400 dark:text-gray-500 inline-block overflow-hidden"
                 style={{ width: `${width()}px`, "min-width": `${width()}px` }}
               >
                 {ml.label}
@@ -164,7 +164,7 @@ export default function Heatmap(props: HeatmapProps) {
           <For each={DAY_LABELS}>
             {(label) => (
               <span
-                class="text-[9px] text-gray-400 leading-none flex items-center"
+                class="text-[9px] text-gray-400 dark:text-gray-500 leading-none flex items-center"
                 style={{ height: `${cellSize()}px` }}
               >
                 {label}
