@@ -273,4 +273,31 @@ describe('background service worker', () => {
       }),
     );
   });
+
+  it('rejects UPDATE_CONFIG with zero workDuration and does not apply the config', async () => {
+    const badConfig = createConfig({ workDuration: 0 });
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
+
+    expect(response).toEqual({ error: 'Duration values must be greater than 0' });
+    await expect(getConfig()).resolves.toEqual(DEFAULT_CONFIG);
+  });
+
+  it('rejects UPDATE_CONFIG with zero shortBreakDuration and does not apply the config', async () => {
+    const badConfig = createConfig({ shortBreakDuration: 0 });
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: badConfig });
+
+    expect(response).toEqual({ error: 'Duration values must be greater than 0' });
+  });
+
+  it('returns an error for an unknown action', async () => {
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UNKNOWN_ACTION' });
+
+    expect(response).toEqual({ error: 'Unknown action' });
+  });
 });

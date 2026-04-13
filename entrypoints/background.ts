@@ -187,12 +187,18 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
+        const { workDuration, shortBreakDuration, longBreakDuration } = message.config;
+        if (workDuration <= 0 || shortBreakDuration <= 0 || longBreakDuration <= 0) {
+          return { error: 'Duration values must be greater than 0' };
+        }
+
         await setConfig(message.config);
         const nextState = adjustDuration(state, message.config);
         await setTimerState(nextState);
 
         if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
-          await scheduleTimerAlarm(nextState.endTime);
+          const delay = nextState.endTime - Date.now();
+          await scheduleTimerAlarm(delay < 1000 ? Date.now() + 1000 : nextState.endTime);
           await startBadgeRefresh();
         } else {
           await clearActiveAlarms();
@@ -202,7 +208,8 @@ export default defineBackground(() => {
         return nextState;
       }
       default: {
-        return state;
+        console.warn('[tomate] handleMessage: unknown action', (message as { action?: unknown }).action);
+        return { error: 'Unknown action' };
       }
     }
   };
