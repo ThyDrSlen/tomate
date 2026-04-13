@@ -1,4 +1,4 @@
-import { browser } from 'wxt/browser';
+import { browser, type Browser } from 'wxt/browser';
 
 import {
   abandonTimer,
@@ -246,7 +246,7 @@ export default defineBackground(() => {
 
   let alarmHandling = false;
 
-  const handleAlarm = async (alarm: browser.alarms.Alarm): Promise<void> => {
+  const handleAlarm = async (alarm: Browser.alarms.Alarm): Promise<void> => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
       await refreshBadge();
       return;
