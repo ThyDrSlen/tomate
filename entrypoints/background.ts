@@ -205,7 +205,26 @@ export default defineBackground(() => {
     }
   };
 
-  browser.runtime.onInstalled.addListener(async () => {
+  browser.runtime.onInstalled.addListener(async (details) => {
+    // On fresh install or update, remove any stale dynamic declarativeNetRequest rules (#103)
+    if (details.reason === 'install' || details.reason === 'update') {
+      try {
+        const dnr = (browser as typeof browser & {
+          declarativeNetRequest?: {
+            getDynamicRules(): Promise<{ id: number }[]>;
+            updateDynamicRules(opts: { removeRuleIds: number[] }): Promise<void>;
+          };
+        }).declarativeNetRequest;
+        if (dnr) {
+          const existing = await dnr.getDynamicRules();
+          if (existing.length > 0) {
+            await dnr.updateDynamicRules({ removeRuleIds: existing.map((r) => r.id) });
+          }
+        }
+      } catch {
+        // declarativeNetRequest may not be available if the permission is not declared
+      }
+    }
     await recoverFromMissedAlarm();
   });
 
