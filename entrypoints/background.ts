@@ -238,7 +238,7 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onMessage.addListener((message, sender) => {
-    if (sender.id !== browser.runtime.id) {
+    if (sender.id !== undefined && sender.id !== browser.runtime.id) {
       return false;
     }
     return handleMessage(message as MessageAction);
