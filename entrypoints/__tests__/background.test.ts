@@ -383,6 +383,17 @@ describe('background service worker', () => {
     });
 
     it('BREAK_SUGGESTION phase shows completed count with checkmark', async () => {
+      const todayKey = toDateKey(Date.now());
+      for (let i = 0; i < 4; i++) {
+        await addCompletedSession({
+          id: `session-${i}`,
+          label: '',
+          startTime: 0,
+          endTime: 0,
+          date: todayKey,
+          duration: 25 * 60 * 1000,
+        });
+      }
       await setTimerState(
         createState({
           phase: 'BREAK_SUGGESTION',
