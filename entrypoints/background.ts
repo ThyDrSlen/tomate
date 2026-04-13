@@ -59,7 +59,9 @@ export default defineBackground(() => {
         break;
       }
       case 'BREAK_SUGGESTION': {
-        text = `${todayCount}✓`;
+        const todayKey = toDateKey(Date.now());
+        const breakCount = state.lastWorkDate === todayKey ? todayCount : 0;
+        text = `${breakCount}✓`;
         color = BADGE_GOLD;
         break;
       }

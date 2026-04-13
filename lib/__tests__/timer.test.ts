@@ -10,6 +10,7 @@ import {
   recoverMissedAlarm,
   skipLongBreak,
   startTimer,
+  toDateKey,
 } from '../timer';
 import { DEFAULT_CONFIG, INITIAL_STATE, type TimerConfig, type TimerState } from '../types';
 
@@ -229,6 +230,7 @@ describe('timer state machine', () => {
       duration: 500,
       sessionCount: 1,
       completedToday: 1,
+      lastWorkDate: toDateKey(3_000),
     });
   });
 
