@@ -81,6 +81,11 @@ export default function App() {
       <div class="w-full max-w-[400px] bg-white rounded-lg shadow-sm p-6">
         <h1 class="text-xl font-bold text-red-600 mb-6">Tomate Settings</h1>
 
+        {/* Hidden range-hint spans for aria-describedby */}
+        <span id="work-hint" class="sr-only">1–120 minutes</span>
+        <span id="short-break-hint" class="sr-only">1–30 minutes</span>
+        <span id="long-break-hint" class="sr-only">5–60 minutes</span>
+
         <div class="space-y-4">
           <label class="block">
             <span class="text-sm font-medium text-gray-700">Work Duration (minutes)</span>
@@ -90,6 +95,8 @@ export default function App() {
               max={120}
               value={work()}
               onInput={(e) => setWork(Number(e.currentTarget.value))}
+              aria-describedby="work-hint"
+              aria-invalid={!isValidWork(work()) ? "true" : "false"}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </label>
@@ -102,6 +109,8 @@ export default function App() {
               max={30}
               value={shortBreak()}
               onInput={(e) => setShortBreak(Number(e.currentTarget.value))}
+              aria-describedby="short-break-hint"
+              aria-invalid={!isValidShortBreak(shortBreak()) ? "true" : "false"}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </label>
@@ -114,6 +123,8 @@ export default function App() {
               max={60}
               value={longBreak()}
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
+              aria-describedby="long-break-hint"
+              aria-invalid={!isValidLongBreak(longBreak()) ? "true" : "false"}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </label>
@@ -157,9 +168,9 @@ export default function App() {
             Reset to defaults
           </button>
 
-          <Show when={saved()}>
-            <span class="text-sm text-green-600">Settings saved ✓</span>
-          </Show>
+          <span aria-live="polite" aria-atomic="true" class="text-sm text-green-600">
+            <Show when={saved()}>Settings saved ✓</Show>
+          </span>
         </div>
 
         <Show when={error()}>
