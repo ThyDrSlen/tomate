@@ -65,6 +65,7 @@ const generateHeatmapGrid = (
 };
 
 type MonthLabel = { label: string; column: number };
+type YearLabel = { label: string; column: number };
 
 export default function Heatmap(props: HeatmapProps) {
   const cellSize = () => props.cellSize ?? 12;
@@ -119,6 +120,26 @@ export default function Heatmap(props: HeatmapProps) {
     return labels;
   });
 
+  const yearLabels = createMemo(() => {
+    const cols = columns();
+    const labels: YearLabel[] = [];
+    let lastYear = -1;
+
+    for (let c = 0; c < cols.length; c++) {
+      const firstCell = cols[c].find((cell) => cell !== null);
+      if (firstCell) {
+        const year = Number.parseInt(firstCell.date.split('-')[0], 10);
+        if (year !== lastYear) {
+          labels.push({ label: String(year), column: c });
+          lastYear = year;
+        }
+      }
+    }
+
+    // Only show year labels when the heatmap spans more than one year
+    return labels.length > 1 ? labels : [];
+  });
+
   const tooltipText = (cell: HeatmapCell) => {
     const count = cell.count;
     const label = count === 0 ? 'No tomates' : `${count} tomate${count !== 1 ? 's' : ''}`;
@@ -129,6 +150,30 @@ export default function Heatmap(props: HeatmapProps) {
 
   return (
     <div class="w-full overflow-x-auto">
+      {/* Year labels — only rendered when heatmap spans multiple years */}
+      {yearLabels().length > 0 && (
+        <div class="flex" style={{ "padding-left": `${labelWidth}px` }}>
+          <For each={yearLabels()}>
+            {(yl, i) => {
+              const nextCol = () => {
+                const labels = yearLabels();
+                const idx = i();
+                return idx < labels.length - 1 ? labels[idx + 1].column : columns().length;
+              };
+              const width = () => (nextCol() - yl.column) * (cellSize() + gap);
+              return (
+                <span
+                  class="text-[9px] text-gray-500 font-semibold inline-block overflow-hidden"
+                  style={{ width: `${width()}px`, "min-width": `${width()}px` }}
+                >
+                  {yl.label}
+                </span>
+              );
+            }}
+          </For>
+        </div>
+      )}
+
       {/* Month labels */}
       <div class="flex" style={{ "padding-left": `${labelWidth}px` }}>
         <For each={monthLabels()}>
