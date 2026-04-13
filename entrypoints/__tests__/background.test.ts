@@ -230,6 +230,57 @@ describe('background service worker', () => {
     );
   });
 
+  it('returns current state (no crash) when message has an unknown action type', async () => {
+    const storedState = createState({ phase: 'IDLE' });
+    await setTimerState(storedState);
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'INVALID_ACTION' } as never);
+
+    // The default branch returns the current state without throwing
+    expect(response).toEqual(storedState);
+  });
+
+  it('returns current state (no crash) when message is missing required fields', async () => {
+    const storedState = createState({ phase: 'IDLE' });
+    await setTimerState(storedState);
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({} as never);
+
+    expect(response).toEqual(storedState);
+  });
+
+  it('recoverMissedAlarm returns null when state is already recovered (not active)', async () => {
+    // After a working session has been recovered, the state is SHORT_BREAK with a future endTime.
+    // A second call to recoverMissedAlarm must return null so the handler does not double-count.
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      }),
+    );
+    await initBackground();
+
+    // First recovery via onInstalled
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
+
+    const recoveredState = await getTimerState();
+    expect(recoveredState.phase).toBe('SHORT_BREAK');
+
+    // Simulate a concurrent second recovery call (e.g. onStartup firing at the same time).
+    // The state is now SHORT_BREAK with endTime in the future, so recoverMissedAlarm returns null
+    // and no additional session is recorded.
+    const sessionsBefore = await getSessionHistory();
+    await fakeBrowser.runtime.onStartup.trigger(undefined as never);
+    const sessionsAfter = await getSessionHistory();
+
+    expect(sessionsAfter).toHaveLength(sessionsBefore.length);
+  });
+
   it('returns the current timer state for GET_STATE', async () => {
     const storedState = createState({
       phase: 'BREAK_SUGGESTION',
