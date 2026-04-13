@@ -85,6 +85,8 @@ export default defineBackground(() => {
   };
 
   const startBadgeRefresh = async (): Promise<void> => {
+    // Clear any existing alarm first to avoid silent duplicate alarms (#97)
+    await browser.alarms.clear(ALARM_BADGE_REFRESH);
     await browser.alarms.create(ALARM_BADGE_REFRESH, { periodInMinutes: 1 });
   };
 
