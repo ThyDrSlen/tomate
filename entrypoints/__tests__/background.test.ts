@@ -213,12 +213,14 @@ describe('background service worker', () => {
       }),
     );
     await expect(getPendingCelebration()).resolves.toBe(true);
+    // endTime should be state.endTime (the originally scheduled alarm time),
+    // not Date.now(), so recovered sessions don't get an inflated duration (#514).
     await expect(getSessionHistory()).resolves.toEqual([
       {
         id: expect.any(String),
         label: 'Recovered work',
         startTime: 1_000,
-        endTime: 10_000,
+        endTime: 2_000,
         date: toDateKey(1_000),
         duration: 1_000,
       },

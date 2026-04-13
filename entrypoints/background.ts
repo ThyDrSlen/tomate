@@ -128,7 +128,9 @@ export default defineBackground(() => {
     await setTimerState(recovered);
 
     if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
+      // Use the originally scheduled end time, not Date.now(), so that
+      // recovered sessions don't get an inflated duration (#514).
+      await persistCompletedSession(state, state.endTime ?? Date.now());
     }
 
     if (recovered.phase === 'SHORT_BREAK' && recovered.endTime !== null) {
