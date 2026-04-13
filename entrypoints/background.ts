@@ -237,7 +237,14 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+  browser.runtime.onMessage.addListener((message, sender) => {
+    // Reject messages from other extensions; allow own pages/content-scripts
+    // (which carry a matching sender.id) and internal calls (sender.id undefined).
+    if (sender.id !== undefined && sender.id !== browser.runtime.id) {
+      return;
+    }
+    return handleMessage(message as MessageAction);
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
