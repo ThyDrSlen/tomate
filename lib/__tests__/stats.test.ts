@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeBestDay, computeStreak, computeTotalCount, computeWeekCount } from '../stats';
+import { computeBestDay, computeStreak, computeTotalCount, computeWeekCount, sanitizeCSVCell } from '../stats';
 import type { CompletedSession } from '../types';
 
 const makeSession = (date: string, id = date): CompletedSession => ({
@@ -24,6 +24,35 @@ const dateKey = (daysAgo: number): string => {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 };
+
+describe('sanitizeCSVCell', () => {
+  it('returns plain strings unchanged', () => {
+    expect(sanitizeCSVCell('hello')).toBe('hello');
+    expect(sanitizeCSVCell('work session')).toBe('work session');
+    expect(sanitizeCSVCell('')).toBe('');
+  });
+
+  it('prefixes = with a single quote', () => {
+    expect(sanitizeCSVCell('=SUM(A1)')).toBe("'=SUM(A1)");
+  });
+
+  it('prefixes + with a single quote', () => {
+    expect(sanitizeCSVCell('+1')).toBe("'+1");
+  });
+
+  it('prefixes - with a single quote', () => {
+    expect(sanitizeCSVCell('-1')).toBe("'-1");
+  });
+
+  it('prefixes @ with a single quote', () => {
+    expect(sanitizeCSVCell('@SUM')).toBe("'@SUM");
+  });
+
+  it('does not prefix characters that are not formula triggers', () => {
+    expect(sanitizeCSVCell('1+2')).toBe('1+2');
+    expect(sanitizeCSVCell('a@b')).toBe('a@b');
+  });
+});
 
 describe('computeTotalCount', () => {
   it('returns 0 for an empty array', () => {

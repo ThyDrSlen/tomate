@@ -1,7 +1,7 @@
 import { createResource, For, Show } from 'solid-js';
 
 import { getConfig, getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
-import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
+import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak, sanitizeCSVCell } from '@/lib/stats';
 
 import Heatmap from '@/components/Heatmap';
 
@@ -32,7 +32,7 @@ function StatCard(props: StatCardProps) {
 function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
   const header = 'startTime,endTime,duration,label';
   const rows = sessions.map((s) => {
-    const label = `"${s.label.replace(/"/g, '""')}"`;
+    const label = `"${sanitizeCSVCell(s.label).replace(/"/g, '""')}"`;
     return `${s.startTime},${s.endTime},${s.duration},${label}`;
   });
   const csv = [header, ...rows].join('\n');
