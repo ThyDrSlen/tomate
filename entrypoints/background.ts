@@ -99,6 +99,7 @@ export default defineBackground(() => {
     endTime: number,
   ): Promise<void> => {
     if (state.startTime === null || state.duration === null) {
+      console.warn('[tomate] persistCompletedSession: startTime or duration is null, skipping session persist', { startTime: state.startTime, duration: state.duration });
       return;
     }
 
@@ -251,17 +252,26 @@ export default defineBackground(() => {
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
-    await setTimerState(completed);
+    try {
+      await setTimerState(completed);
+    } catch (err) {
+      console.error('[tomate] onAlarm: setTimerState failed, timer state may be inconsistent', err);
+      return;
+    }
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
-      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: '🍅 Tomate Complete!',
-          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-        });
+      try {
+        if (typeof browser.notifications !== 'undefined' && browser.notifications?.create) {
+          await browser.notifications.create({
+            type: 'basic',
+            iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+            title: '🍅 Tomate Complete!',
+            message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+          });
+        }
+      } catch (err) {
+        console.warn('[tomate] notifications.create failed (API may be unavailable)', err);
       }
       if (config.openBreakTab !== false) {
         try {
@@ -273,13 +283,17 @@ export default defineBackground(() => {
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-        });
+      try {
+        if (typeof browser.notifications !== 'undefined' && browser.notifications?.create) {
+          await browser.notifications.create({
+            type: 'basic',
+            iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+            title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+            message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+          });
+        }
+      } catch (err) {
+        console.warn('[tomate] notifications.create failed (API may be unavailable)', err);
       }
     }
 
