@@ -239,6 +239,52 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
 
+  // Keep declarativeNetRequest block rules in sync with the blockedSites storage
+  // key.  Validate that newValue is a genuine string[] before touching DNR rules;
+  // a non-array value (e.g. undefined on key deletion, or a corrupted write) used
+  // to be cast blindly and would produce garbage rule objects (#240).
+  browser.storage.onChanged.addListener(async (changes, areaName) => {
+    if (areaName !== 'local' || !('blockedSites' in changes)) {
+      return;
+    }
+
+    const { newValue } = changes['blockedSites'] as { newValue?: unknown };
+
+    if (!Array.isArray(newValue) || !newValue.every((v) => typeof v === 'string')) {
+      console.warn('[tomate] blockedSites change ignored: newValue is not a string[]', newValue);
+      return;
+    }
+
+    const sites: string[] = newValue;
+
+    const dnr = (browser as typeof browser & {
+      declarativeNetRequest?: {
+        getDynamicRules(): Promise<{ id: number }[]>;
+        updateDynamicRules(opts: { removeRuleIds: number[]; addRules: object[] }): Promise<void>;
+      };
+    }).declarativeNetRequest;
+
+    if (!dnr) {
+      return;
+    }
+
+    try {
+      const existing = await dnr.getDynamicRules();
+      const newRules = sites.map((site, idx) => ({
+        id: idx + 1,
+        priority: 1,
+        action: { type: 'block' },
+        condition: { urlFilter: site, resourceTypes: ['main_frame'] },
+      }));
+      await dnr.updateDynamicRules({
+        removeRuleIds: existing.map((r) => r.id),
+        addRules: newRules,
+      });
+    } catch (err) {
+      console.error('[tomate] Failed to update DNR rules for blockedSites', err);
+    }
+  });
+
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
       await refreshBadge();
