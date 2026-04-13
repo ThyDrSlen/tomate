@@ -49,8 +49,11 @@ export default function App() {
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const onSessionsChanged = (changes: Record<string, unknown>) => {
+      if ('sessions' in changes) void refreshStats();
+    };
+    browser.storage.onChanged.addListener(onSessionsChanged);
+    onCleanup(() => browser.storage.onChanged.removeListener(onSessionsChanged));
   });
 
   createEffect(() => {
@@ -151,7 +154,7 @@ export default function App() {
 
       <button
         type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html') })}
         class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
       >
         View all stats →
