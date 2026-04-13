@@ -4,6 +4,8 @@ type HeatmapProps = {
   data: Record<string, number>;
   days: number;
   cellSize?: number;
+  /** When provided, renders all days of this calendar year instead of a rolling window. */
+  year?: number;
 };
 
 type HeatmapCell = {
@@ -45,8 +47,29 @@ const toDateKey = (date: Date): string => {
 const generateHeatmapGrid = (
   data: Record<string, number>,
   days: number,
+  year?: number,
 ): HeatmapCell[] => {
   const cells: HeatmapCell[] = [];
+
+  if (year !== undefined) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isCurrentYear = year === today.getFullYear();
+    const endDate = isCurrentYear ? today : new Date(year, 11, 31);
+    const startDate = new Date(year, 0, 1);
+
+    for (const d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const key = toDateKey(d);
+      cells.push({
+        date: key,
+        count: data[key] ?? 0,
+        dayOfWeek: d.getDay(),
+      });
+    }
+
+    return cells;
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -70,7 +93,7 @@ export default function Heatmap(props: HeatmapProps) {
   const cellSize = () => props.cellSize ?? 12;
   const gap = 2;
 
-  const grid = createMemo(() => generateHeatmapGrid(props.data, props.days));
+  const grid = createMemo(() => generateHeatmapGrid(props.data, props.days, props.year));
 
   const toMonRow = (jsDay: number) => (jsDay === 0 ? 6 : jsDay - 1);
 
