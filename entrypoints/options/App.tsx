@@ -72,7 +72,9 @@ export default function App() {
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(DEFAULT_CONFIG.openBreakTab);
     setPlayCompletionSound(DEFAULT_CONFIG.playCompletionSound);
-    setExtraConfig({ dailyGoal: DEFAULT_CONFIG.dailyGoal });
+    // Reset all non-UI fields to their defaults so future config fields aren't silently wiped
+    const { workDuration: _w, shortBreakDuration: _s, longBreakDuration: _l, openBreakTab: _o, playCompletionSound: _p, ...restDefaults } = DEFAULT_CONFIG;
+    setExtraConfig(restDefaults);
     setError('');
   };
 
