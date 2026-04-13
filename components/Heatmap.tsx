@@ -22,6 +22,15 @@ const INTENSITY_COLORS = [
 
 const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''] as const;
 
+const FULL_DAY_NAMES = [
+  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+] as const;
+
+const FULL_MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+] as const;
+
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -125,6 +134,16 @@ export default function Heatmap(props: HeatmapProps) {
     return `${label} on ${cell.date}`;
   };
 
+  const ariaLabel = (cell: HeatmapCell) => {
+    const [year, month, day] = cell.date.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    const dayName = FULL_DAY_NAMES[date.getDay()];
+    const monthName = FULL_MONTH_NAMES[month - 1];
+    const count = cell.count;
+    const sessionLabel = count === 0 ? 'no sessions' : `${count} session${count !== 1 ? 's' : ''}`;
+    return `${dayName} ${monthName} ${day} ${year}: ${sessionLabel}`;
+  };
+
   const labelWidth = 24;
 
   return (
@@ -175,6 +194,8 @@ export default function Heatmap(props: HeatmapProps) {
 
         {/* Heatmap cells - CSS Grid: 7 rows, auto columns */}
         <div
+          role="grid"
+          aria-label="Activity heatmap"
           class="grid"
           style={{
             "grid-template-rows": `repeat(7, ${cellSize()}px)`,
@@ -189,13 +210,16 @@ export default function Heatmap(props: HeatmapProps) {
                 {(cell) =>
                   cell ? (
                     <div
-                      class="rounded-sm"
+                      class="rounded-sm focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-red-500"
                       style={{
                         width: `${cellSize()}px`,
                         height: `${cellSize()}px`,
                         "background-color": getIntensityColor(cell.count),
                       }}
+                      role="gridcell"
+                      tabIndex={0}
                       title={tooltipText(cell)}
+                      aria-label={ariaLabel(cell)}
                     />
                   ) : (
                     <div
