@@ -31,6 +31,7 @@ const buildConfig = (
   playCompletionSound: boolean,
   extra: Partial<TimerConfig> = {},
 ): TimerConfig => ({
+  configVersion: DEFAULT_CONFIG.configVersion,
   dailyGoal: DEFAULT_CONFIG.dailyGoal,
   ...extra,
   workDuration: work * MS_PER_MINUTE,

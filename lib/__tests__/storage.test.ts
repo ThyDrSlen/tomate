@@ -82,6 +82,51 @@ describe('storage helpers', () => {
     await expect(getConfig()).resolves.toEqual(config);
   });
 
+  it('fills defaults for v1 configs that are missing new fields', async () => {
+    // Simulate a stored v1 config (only the original 3 fields, no configVersion)
+    const v1Config = {
+      workDuration: 30 * 60 * 1000,
+      shortBreakDuration: 5 * 60 * 1000,
+      longBreakDuration: 20 * 60 * 1000,
+    };
+    await fakeBrowser.storage.local.set({ config: v1Config });
+
+    const result = await getConfig();
+
+    // Preserved v1 user-customised values
+    expect(result.workDuration).toBe(30 * 60 * 1000);
+    expect(result.shortBreakDuration).toBe(5 * 60 * 1000);
+    expect(result.longBreakDuration).toBe(20 * 60 * 1000);
+    // New v2 fields filled with defaults
+    expect(result.dailyGoal).toBe(DEFAULT_CONFIG.dailyGoal);
+    expect(result.openBreakTab).toBe(DEFAULT_CONFIG.openBreakTab);
+    // Version bumped to current
+    expect(result.configVersion).toBe(DEFAULT_CONFIG.configVersion);
+  });
+
+  it('fills defaults for configs with an explicit configVersion of 1', async () => {
+    const v1Config = {
+      configVersion: 1,
+      workDuration: 25 * 60 * 1000,
+      shortBreakDuration: 5 * 60 * 1000,
+      longBreakDuration: 30 * 60 * 1000,
+    };
+    await fakeBrowser.storage.local.set({ config: v1Config });
+
+    const result = await getConfig();
+
+    expect(result.dailyGoal).toBe(DEFAULT_CONFIG.dailyGoal);
+    expect(result.openBreakTab).toBe(DEFAULT_CONFIG.openBreakTab);
+    expect(result.configVersion).toBe(DEFAULT_CONFIG.configVersion);
+  });
+
+  it('returns a v2 config unchanged', async () => {
+    const v2Config = createConfig({ dailyGoal: 10, openBreakTab: false });
+    await setConfig(v2Config);
+
+    await expect(getConfig()).resolves.toEqual(v2Config);
+  });
+
   it('adds a completed session and returns it from history', async () => {
     const session = createSession(new Date(2026, 2, 15, 9, 0, 0).getTime());
 
