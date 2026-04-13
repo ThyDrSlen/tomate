@@ -86,10 +86,11 @@ export const getHeatmapData = async (days: number): Promise<Record<string, numbe
 };
 
 export const getTodayCount = async (): Promise<number> => {
+  const state = await getTimerState();
   const todayKey = toDateKey(Date.now());
-  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-
-  return sessions.filter((session) => session.date === todayKey).length;
+  // completedToday is keyed to lastWorkDate; if the date has rolled over since
+  // the last session, the counter belongs to a previous day so today's count is 0.
+  return state.lastWorkDate === todayKey ? state.completedToday : 0;
 };
 
 export const getPendingCelebration = async (): Promise<boolean> =>

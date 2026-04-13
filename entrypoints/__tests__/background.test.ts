@@ -125,6 +125,7 @@ describe('background service worker', () => {
         duration: DEFAULT_CONFIG.shortBreakDuration,
         sessionCount: 1,
         completedToday: 1,
+        lastWorkDate: toDateKey(5_000),
       }),
     );
     await expect(getPendingCelebration()).resolves.toBe(true);
@@ -210,6 +211,7 @@ describe('background service worker', () => {
         duration: DEFAULT_CONFIG.shortBreakDuration,
         sessionCount: 1,
         completedToday: 1,
+        lastWorkDate: toDateKey(10_000),
       }),
     );
     await expect(getPendingCelebration()).resolves.toBe(true);

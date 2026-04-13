@@ -119,17 +119,23 @@ describe('storage helpers', () => {
     });
   });
 
-  it('counts only todays sessions', async () => {
+  it('counts only todays sessions via TimerState.completedToday', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(new Date(2026, 2, 20, 12, 0, 0).getTime());
 
-    const todayTimestamp = new Date(2026, 2, 20, 9, 0, 0).getTime();
-    const yesterdayTimestamp = new Date(2026, 2, 19, 9, 0, 0).getTime();
-
-    await addCompletedSession(createSession(todayTimestamp, { id: 'today-1' }));
-    await addCompletedSession(createSession(todayTimestamp + 1_000, { id: 'today-2' }));
-    await addCompletedSession(createSession(yesterdayTimestamp, { id: 'yesterday-1' }));
+    const todayKey = toDateKey(new Date(2026, 2, 20, 12, 0, 0).getTime());
+    // getTodayCount reads completedToday from TimerState (O(1)), not the sessions array.
+    await setTimerState(createState({ completedToday: 2, lastWorkDate: todayKey }));
 
     await expect(getTodayCount()).resolves.toBe(2);
+  });
+
+  it('returns 0 from getTodayCount when lastWorkDate is a previous day', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(new Date(2026, 2, 20, 12, 0, 0).getTime());
+
+    const yesterdayKey = toDateKey(new Date(2026, 2, 19, 9, 0, 0).getTime());
+    await setTimerState(createState({ completedToday: 3, lastWorkDate: yesterdayKey }));
+
+    await expect(getTodayCount()).resolves.toBe(0);
   });
 
   it('truncates labels to 50 characters before storing', async () => {
