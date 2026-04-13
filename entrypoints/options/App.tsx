@@ -6,10 +6,6 @@ import { DEFAULT_CONFIG, type TimerConfig } from '@/lib/types';
 
 const MS_PER_MINUTE = 60_000;
 
-const isValidWork = (v: number) => v >= 1 && v <= 120;
-const isValidShortBreak = (v: number) => v >= 1 && v <= 30;
-const isValidLongBreak = (v: number) => v >= 5 && v <= 60;
-
 export default function App() {
   const [work, setWork] = createSignal(25);
   const [shortBreak, setShortBreak] = createSignal(5);
@@ -20,6 +16,10 @@ export default function App() {
   const [extraConfig, setExtraConfig] = createSignal<Partial<TimerConfig>>({});
   const [saved, setSaved] = createSignal(false);
   const [error, setError] = createSignal('');
+
+  const isValidWork = () => work() >= 1 && work() <= 120;
+  const isValidShortBreak = () => shortBreak() >= 1 && shortBreak() <= 30;
+  const isValidLongBreak = () => longBreak() >= 5 && longBreak() <= 60;
 
   onMount(async () => {
     const config = await getConfig();
@@ -34,7 +34,7 @@ export default function App() {
   });
 
   const isValid = () =>
-    isValidWork(work()) && isValidShortBreak(shortBreak()) && isValidLongBreak(longBreak());
+    isValidWork() && isValidShortBreak() && isValidLongBreak();
 
   const handleSave = async () => {
     setError('');
@@ -77,45 +77,54 @@ export default function App() {
   };
 
   return (
-    <div class="min-h-screen bg-red-50 flex items-start justify-center pt-16">
-      <div class="w-full max-w-[400px] bg-white rounded-lg shadow-sm p-6">
-        <h1 class="text-xl font-bold text-red-600 mb-6">Tomate Settings</h1>
+    <div class="min-h-screen bg-red-50 dark:bg-gray-900 flex items-start justify-center pt-16">
+      <div class="w-full max-w-[400px] bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+        <h1 class="text-xl font-bold text-red-600 dark:text-red-400 mb-6">Tomate Settings</h1>
 
         <div class="space-y-4">
           <label class="block">
-            <span class="text-sm font-medium text-gray-700">Work Duration (minutes)</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200">Work Duration (minutes)</span>
             <input
               type="number"
               min={1}
               max={120}
               value={work()}
               onInput={(e) => setWork(Number(e.currentTarget.value))}
-              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              aria-describedby="work-hint"
+              aria-invalid={!isValidWork()}
+              class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+            <span id="work-hint" class="text-xs text-gray-500 dark:text-gray-400">1–120 minutes</span>
           </label>
 
           <label class="block">
-            <span class="text-sm font-medium text-gray-700">Short Break (minutes)</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200">Short Break (minutes)</span>
             <input
               type="number"
               min={1}
               max={30}
               value={shortBreak()}
               onInput={(e) => setShortBreak(Number(e.currentTarget.value))}
-              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              aria-describedby="short-break-hint"
+              aria-invalid={!isValidShortBreak()}
+              class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+            <span id="short-break-hint" class="text-xs text-gray-500 dark:text-gray-400">1–30 minutes</span>
           </label>
 
           <label class="block">
-            <span class="text-sm font-medium text-gray-700">Long Break (minutes)</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200">Long Break (minutes)</span>
             <input
               type="number"
               min={5}
               max={60}
               value={longBreak()}
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
-              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              aria-describedby="long-break-hint"
+              aria-invalid={!isValidLongBreak()}
+              class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+            <span id="long-break-hint" class="text-xs text-gray-500 dark:text-gray-400">5–60 minutes</span>
           </label>
 
           <label class="flex items-center gap-3 cursor-pointer">
@@ -123,9 +132,9 @@ export default function App() {
               type="checkbox"
               checked={openBreakTab()}
               onChange={(e) => setOpenBreakTab(e.currentTarget.checked)}
-              class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+              class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-500"
             />
-            <span class="text-sm font-medium text-gray-700">Open stats tab when session completes</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200">Open stats tab when session completes</span>
           </label>
 
           <label class="flex items-center gap-3 cursor-pointer">
@@ -152,14 +161,16 @@ export default function App() {
           <button
             type="button"
             onClick={handleReset}
-            class="text-sm text-gray-500 hover:text-gray-700 underline"
+            class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 underline"
           >
             Reset to defaults
           </button>
 
-          <Show when={saved()}>
-            <span class="text-sm text-green-600">Settings saved ✓</span>
-          </Show>
+          <span aria-live="polite" aria-atomic="true">
+            <Show when={saved()}>
+              <span class="text-sm text-green-600 dark:text-green-400">Settings saved ✓</span>
+            </Show>
+          </span>
         </div>
 
         <Show when={error()}>
