@@ -243,6 +243,121 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
+  it('opens break tab via tabs.create when openBreakTab is true and a working alarm completes', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    // Store config with openBreakTab explicitly enabled
+    const { setConfig } = await import('@/lib/storage');
+    await setConfig(createConfig({ openBreakTab: true }));
+    await initBackground();
+
+    fakeBrowser.tabs = {
+      ...fakeBrowser.tabs,
+      create: vi.fn().mockResolvedValue({ id: 1 }),
+    } as typeof fakeBrowser.tabs;
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(fakeBrowser.tabs.create).toHaveBeenCalledOnce();
+    expect(fakeBrowser.tabs.create).toHaveBeenCalledWith(
+      expect.objectContaining({ url: expect.stringContaining('stats.html') }),
+    );
+  });
+
+  it('does not open break tab when openBreakTab is false and a working alarm completes', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    const { setConfig } = await import('@/lib/storage');
+    await setConfig(createConfig({ openBreakTab: false }));
+    await initBackground();
+
+    const tabsCreate = vi.fn().mockResolvedValue({ id: 1 });
+    fakeBrowser.tabs = {
+      ...fakeBrowser.tabs,
+      create: tabsCreate,
+    } as typeof fakeBrowser.tabs;
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(tabsCreate).not.toHaveBeenCalled();
+  });
+
+  it('recovers multi-hop missed alarms on startup: working session then expired break alarm both complete', async () => {
+    // Simulate the browser being dormant for longer than one full work+break cycle.
+    // The stored state is WORKING with an endTime well in the past so that after
+    // recovery the resulting SHORT_BREAK endTime is also in the past.
+    const workDuration = DEFAULT_CONFIG.workDuration; // e.g. 25 min in ms
+    const breakDuration = DEFAULT_CONFIG.shortBreakDuration;
+
+    // Timer started 3× workDuration ago — both the working session and the
+    // subsequent break have already expired.
+    const startTime = 1_000;
+    const workEndTime = startTime + workDuration; // first hop: already past
+    const breakEndTime = workEndTime + breakDuration; // second hop: also past
+    const now = breakEndTime + 1_000; // current time is past both
+
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    await setCurrentLabel('Dormant session');
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime,
+        endTime: workEndTime,
+        duration: workDuration,
+      }),
+    );
+    await initBackground();
+
+    // Trigger startup — this fires recoverFromMissedAlarm once (hop 1: WORKING → SHORT_BREAK)
+    await fakeBrowser.runtime.onStartup.trigger(undefined as never);
+
+    // After the first recovery the state should be SHORT_BREAK with an endTime
+    // that is already in the past.
+    const stateAfterFirstHop = await getTimerState();
+    expect(stateAfterFirstHop.phase).toBe('SHORT_BREAK');
+
+    // The scheduled alarm endTime is in the past — triggering it simulates the
+    // second hop completing (SHORT_BREAK → IDLE).
+    if (stateAfterFirstHop.endTime !== null) {
+      await fakeBrowser.alarms.onAlarm.trigger({
+        name: 'tomate-timer',
+        scheduledTime: stateAfterFirstHop.endTime,
+      });
+    }
+
+    // After the second hop the timer should be back to idle
+    await expect(getTimerState()).resolves.toEqual(
+      expect.objectContaining({
+        phase: 'IDLE',
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+    );
+
+    // The working session must have been persisted during the first-hop recovery
+    await expect(getSessionHistory()).resolves.toEqual([
+      expect.objectContaining({
+        label: 'Dormant session',
+        startTime,
+        duration: workDuration,
+      }),
+    ]);
+  });
+
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });
