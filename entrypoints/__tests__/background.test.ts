@@ -134,7 +134,7 @@ describe('background service worker', () => {
         label: 'Focus block',
         startTime: 1_000,
         endTime: 5_000,
-        date: toDateKey(1_000),
+        date: toDateKey(5_000),
         duration: 3_000,
       },
     ]);
@@ -187,6 +187,34 @@ describe('background service worker', () => {
     );
   });
 
+  it('attributes a cross-midnight session to the completion date, not the start date', async () => {
+    // startTime is on Jan 1 1970; completionNow is 24 h + 1 min later on Jan 2 1970.
+    // The >24 h gap guarantees different calendar dates in every UTC offset (UTC-14..UTC+14).
+    const startTime = 1_000; // Jan 1 1970 00:00:01 UTC
+    const completionNow = 86_461_000; // Jan 2 1970 00:01:01 UTC
+    vi.spyOn(Date, 'now').mockReturnValue(completionNow);
+    await setCurrentLabel('Late night focus');
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime,
+        endTime: startTime + DEFAULT_CONFIG.workDuration,
+        duration: DEFAULT_CONFIG.workDuration,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({
+      name: 'tomate-timer',
+      scheduledTime: startTime + DEFAULT_CONFIG.workDuration,
+    });
+
+    const history = await getSessionHistory();
+    expect(history).toHaveLength(1);
+    expect(history[0].date).toBe(toDateKey(completionNow));
+    expect(history[0].date).not.toBe(toDateKey(startTime));
+  });
+
   it('recovers a missed working alarm on startup and records the completed session', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     await setCurrentLabel('Recovered work');
@@ -219,7 +247,7 @@ describe('background service worker', () => {
         label: 'Recovered work',
         startTime: 1_000,
         endTime: 10_000,
-        date: toDateKey(1_000),
+        date: toDateKey(10_000),
         duration: 1_000,
       },
     ]);
