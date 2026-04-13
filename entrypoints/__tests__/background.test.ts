@@ -243,6 +243,36 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
+  it('ignores a stale tomate-timer alarm when the phase is IDLE and clears the alarm', async () => {
+    await setTimerState(createState({ phase: 'IDLE' }));
+    await initBackground();
+    await fakeBrowser.alarms.create('tomate-timer', { when: 1_000 });
+
+    const stateBefore = await getTimerState();
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 1_000 });
+    const stateAfter = await getTimerState();
+
+    expect(stateAfter).toEqual(stateBefore);
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toBeUndefined();
+  });
+
+  it('ignores a stale tomate-timer alarm when the phase is BREAK_SUGGESTION and clears the alarm', async () => {
+    const storedState = createState({
+      phase: 'BREAK_SUGGESTION',
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+    await setTimerState(storedState);
+    await initBackground();
+    await fakeBrowser.alarms.create('tomate-timer', { when: 1_000 });
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 1_000 });
+
+    await expect(getTimerState()).resolves.toEqual(storedState);
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toBeUndefined();
+  });
+
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });
