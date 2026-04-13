@@ -2,7 +2,7 @@ import { INITIAL_STATE, type TimerConfig, type TimerPhase, type TimerState } fro
 
 const getNow = (now?: number): number => now ?? Date.now();
 
-const toDateKey = (timestamp: number): string => {
+export const toDateKey = (timestamp: number): string => {
   const d = new Date(timestamp);
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
