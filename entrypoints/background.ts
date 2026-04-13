@@ -237,7 +237,12 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+  browser.runtime.onMessage.addListener((message, sender) => {
+    if (sender.id !== browser.runtime.id) {
+      return false;
+    }
+    return handleMessage(message as MessageAction);
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
