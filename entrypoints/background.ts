@@ -251,10 +251,24 @@ export default defineBackground(() => {
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
-    await setTimerState(completed);
+    const endTime = Date.now();
 
     if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
+      try {
+        await Promise.all([
+          setTimerState(completed),
+          persistCompletedSession(state, endTime),
+        ]);
+      } catch (err) {
+        console.error('[tomate] Failed to persist session completion:', err);
+        try { await setTimerState(state); } catch {}
+        throw err;
+      }
+    } else {
+      await setTimerState(completed);
+    }
+
+    if (state.phase === 'WORKING') {
       if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
         await browser.notifications.create({
           type: 'basic',
