@@ -1,9 +1,28 @@
-import { createResource, For, Show } from 'solid-js';
+import { createResource, createSignal, createMemo, For, Show } from 'solid-js';
 
-import { getConfig, getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
+import {
+  getConfig,
+  getSessionHistory,
+  getRecentSessions,
+  getSessionCount,
+  getHeatmapData,
+  getTodayCount,
+} from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
 
 import Heatmap from '@/components/Heatmap';
+
+const INITIAL_TABLE_LIMIT = 50;
+
+function formatDuration(ms: number): string {
+  const mins = Math.round(ms / 60000);
+  return `${mins} min`;
+}
+
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 const INTENSITY_LEGEND = [
   { color: '#F3F4F6', label: '0' },
@@ -48,8 +67,15 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
 export default function App() {
   const [yearData] = createResource(() => getHeatmapData(365));
   const [sessions] = createResource(() => getSessionHistory());
+  const [recentSessions] = createResource(() => getRecentSessions(INITIAL_TABLE_LIMIT));
+  const [sessionCount] = createResource(() => getSessionCount());
   const [todayCount] = createResource(() => getTodayCount());
   const [config] = createResource(() => getConfig());
+
+  const [loadAll, setLoadAll] = createSignal(false);
+  const [allSessions] = createResource(loadAll, (shouldLoad) =>
+    shouldLoad ? getSessionHistory() : Promise.resolve(null),
+  );
 
   const dailyGoal = () => config()?.dailyGoal ?? 8;
   const goalProgress = () => Math.min(100, Math.round(((todayCount() ?? 0) / dailyGoal()) * 100));
@@ -58,6 +84,17 @@ export default function App() {
   const week = () => computeWeekCount(sessions() ?? []);
   const bestDay = () => computeBestDay(sessions() ?? []);
   const streak = () => computeStreak(sessions() ?? []);
+
+  const totalCount = () => sessionCount() ?? 0;
+  const hasMore = () => totalCount() > INITIAL_TABLE_LIMIT;
+
+  const tableSessions = createMemo(() => {
+    const full = allSessions();
+    if (loadAll() && full != null) {
+      return [...full].sort((a, b) => b.startTime - a.startTime);
+    }
+    return [...(recentSessions() ?? [])].sort((a, b) => b.startTime - a.startTime);
+  });
 
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
@@ -133,6 +170,50 @@ export default function App() {
               </For>
               <span>More</span>
             </div>
+          </div>
+
+          <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100 mt-6">
+            <h2 class="text-sm font-semibold text-gray-700 mb-3">Session history</h2>
+            <Show
+              when={tableSessions().length > 0}
+              fallback={
+                <p class="text-sm text-gray-400 text-center py-4">No sessions to display.</p>
+              }
+            >
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="border-b border-red-100">
+                      <th class="text-left py-2 pr-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+                      <th class="text-left py-2 pr-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Label</th>
+                      <th class="text-right py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={tableSessions()}>
+                      {(session) => (
+                        <tr class="border-b border-red-50 last:border-0 hover:bg-red-50 transition-colors">
+                          <td class="py-2 pr-4 text-gray-700 whitespace-nowrap">{formatDate(session.date)}</td>
+                          <td class="py-2 pr-4 text-gray-700 truncate max-w-[200px]">{session.label || '—'}</td>
+                          <td class="py-2 text-right text-red-600 font-medium whitespace-nowrap">{formatDuration(session.duration)}</td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+              </div>
+              <Show when={hasMore() && !loadAll()}>
+                <div class="mt-3 flex items-center justify-between text-xs text-gray-400">
+                  <span>Showing {INITIAL_TABLE_LIMIT} of {totalCount()} sessions</span>
+                  <button
+                    class="text-sm px-4 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-100 transition-colors"
+                    onClick={() => setLoadAll(true)}
+                  >
+                    Load all {totalCount()} sessions
+                  </button>
+                </div>
+              </Show>
+            </Show>
           </div>
         </Show>
       </div>
