@@ -12,6 +12,7 @@ import {
   setTimerState,
   toDateKey,
 } from '@/lib/storage';
+import * as storage from '@/lib/storage';
 import { DEFAULT_CONFIG, INITIAL_STATE, type TimerConfig, type TimerState } from '@/lib/types';
 
 type BackgroundModule = {
@@ -273,5 +274,23 @@ describe('background service worker', () => {
         scheduledTime: 25_000,
       }),
     );
+  });
+
+  it('sets error badge when onAlarm tomate-timer handler throws', async () => {
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    await initBackground();
+
+    vi.spyOn(storage, 'setTimerState').mockRejectedValueOnce(new Error('storage failure'));
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: '!' });
   });
 });
