@@ -56,9 +56,20 @@ export default function App() {
   createEffect(() => {
     const s = state();
     if (isActivePhase(s.phase) && s.endTime) {
-      const tick = () => setRemaining(Math.max(0, s.endTime! - Date.now()));
+      let id: ReturnType<typeof setInterval>;
+      const tick = async () => {
+        const ms = s.endTime! - Date.now();
+        if (ms <= 0) {
+          setRemaining(0);
+          clearInterval(id);
+          const fresh = await browser.runtime.sendMessage({ action: 'GET_STATE' }).catch(() => null);
+          if (fresh) setState(fresh as TimerState);
+        } else {
+          setRemaining(ms);
+        }
+      };
       tick();
-      const id = setInterval(tick, 1000);
+      id = setInterval(tick, 1000);
       onCleanup(() => clearInterval(id));
     } else {
       setRemaining(0);
