@@ -41,7 +41,8 @@ export default defineBackground(() => {
   const badgeApi = browser.action;
 
   const refreshBadge = async (): Promise<void> => {
-    const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
+    // Fix #381: skip getTodayCount() during break phases where the count is unused.
+    const state = await getTimerState();
 
     let text = '';
     let color = BADGE_RED;
@@ -59,12 +60,16 @@ export default defineBackground(() => {
         break;
       }
       case 'BREAK_SUGGESTION': {
+        // Fix #286: re-read from storage here so the count reflects the current
+        // calendar day, not a value that may have been cached before midnight.
+        const todayCount = await getTodayCount();
         text = `${todayCount}✓`;
         color = BADGE_GOLD;
         break;
       }
       case 'IDLE':
       default: {
+        const todayCount = await getTodayCount();
         text = todayCount > 0 ? String(todayCount) : '';
         color = BADGE_RED;
         break;
@@ -147,7 +152,12 @@ export default defineBackground(() => {
     switch (message.action) {
       case 'START_TIMER': {
         const nextState = startTimer(state, config);
-        await setTimerState(nextState);
+        try {
+          await setTimerState(nextState);
+        } catch (err) {
+          console.error('[tomate] handleMessage START_TIMER: setTimerState failed', err);
+          return { error: 'storage_failure' };
+        }
 
         if (nextState.endTime !== null) {
           await scheduleTimerAlarm(nextState.endTime);
@@ -159,7 +169,12 @@ export default defineBackground(() => {
       }
       case 'ABANDON_TIMER': {
         const nextState = abandonTimer(state);
-        await setTimerState(nextState);
+        try {
+          await setTimerState(nextState);
+        } catch (err) {
+          console.error('[tomate] handleMessage ABANDON_TIMER: setTimerState failed', err);
+          return { error: 'storage_failure' };
+        }
         await clearActiveAlarms();
         await refreshBadge();
         return nextState;
@@ -169,7 +184,12 @@ export default defineBackground(() => {
       }
       case 'ACCEPT_LONG_BREAK': {
         const nextState = acceptLongBreak(state, config);
-        await setTimerState(nextState);
+        try {
+          await setTimerState(nextState);
+        } catch (err) {
+          console.error('[tomate] handleMessage ACCEPT_LONG_BREAK: setTimerState failed', err);
+          return { error: 'storage_failure' };
+        }
 
         if (nextState.endTime !== null) {
           await scheduleTimerAlarm(nextState.endTime);
@@ -181,7 +201,12 @@ export default defineBackground(() => {
       }
       case 'SKIP_LONG_BREAK': {
         const nextState = skipLongBreak(state);
-        await setTimerState(nextState);
+        try {
+          await setTimerState(nextState);
+        } catch (err) {
+          console.error('[tomate] handleMessage SKIP_LONG_BREAK: setTimerState failed', err);
+          return { error: 'storage_failure' };
+        }
         await clearActiveAlarms();
         await refreshBadge();
         return nextState;
@@ -189,7 +214,12 @@ export default defineBackground(() => {
       case 'UPDATE_CONFIG': {
         await setConfig(message.config);
         const nextState = adjustDuration(state, message.config);
-        await setTimerState(nextState);
+        try {
+          await setTimerState(nextState);
+        } catch (err) {
+          console.error('[tomate] handleMessage UPDATE_CONFIG: setTimerState failed', err);
+          return { error: 'storage_failure' };
+        }
 
         if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
           await scheduleTimerAlarm(nextState.endTime);
@@ -204,6 +234,57 @@ export default defineBackground(() => {
       default: {
         return state;
       }
+    }
+  };
+
+  // Fix #371: Re-apply declarativeNetRequest blocking rules after a service-worker
+  // restart if the stored phase is still WORKING. Dynamic rules are ephemeral and
+  // lost when the service worker terminates; reading the persisted blockedSites list
+  // and re-registering them ensures sites remain blocked on browser restart.
+  const reapplyBlockingRulesIfWorking = async (): Promise<void> => {
+    try {
+      const state = await getTimerState();
+      if (state.phase !== 'WORKING') {
+        return;
+      }
+
+      const dnr = (browser as typeof browser & {
+        declarativeNetRequest?: {
+          getDynamicRules(): Promise<{ id: number }[]>;
+          updateDynamicRules(opts: { removeRuleIds: number[]; addRules: object[] }): Promise<void>;
+        };
+      }).declarativeNetRequest;
+
+      if (!dnr) {
+        return;
+      }
+
+      // Read the stored blockedSites list (separate from TimerConfig).
+      const stored = await browser.storage.local.get('blockedSites');
+      const sites: unknown = stored['blockedSites'];
+      if (!Array.isArray(sites) || sites.length === 0) {
+        return;
+      }
+
+      const validSites = sites.filter((s): s is string => typeof s === 'string');
+      if (validSites.length === 0) {
+        return;
+      }
+
+      const existing = await dnr.getDynamicRules();
+      const newRules = validSites.map((site, idx) => ({
+        id: idx + 1,
+        priority: 1,
+        action: { type: 'block' },
+        condition: { urlFilter: site, resourceTypes: ['main_frame'] },
+      }));
+
+      await dnr.updateDynamicRules({
+        removeRuleIds: existing.map((r) => r.id),
+        addRules: newRules,
+      });
+    } catch {
+      // declarativeNetRequest may not be available if permission not declared
     }
   };
 
@@ -231,10 +312,12 @@ export default defineBackground(() => {
       }
     }
     await recoverFromMissedAlarm();
+    await reapplyBlockingRulesIfWorking();
   });
 
   browser.runtime.onStartup.addListener(async () => {
     await recoverFromMissedAlarm();
+    await reapplyBlockingRulesIfWorking();
   });
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
