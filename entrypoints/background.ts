@@ -239,6 +239,55 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
 
+  // Keep declarativeNetRequest block rules in sync with blockedSites storage,
+  // but only while a WORKING phase is active (#187).  Applying rules during
+  // break or idle phases is wasteful and can interfere with break-time browsing.
+  browser.storage.onChanged.addListener(async (changes, areaName) => {
+    if (areaName !== 'local' || !('blockedSites' in changes)) {
+      return;
+    }
+
+    const currentState = await getTimerState();
+    if (currentState.phase !== 'WORKING') {
+      return;
+    }
+
+    const { newValue } = changes['blockedSites'] as { newValue?: unknown };
+
+    if (!Array.isArray(newValue) || !newValue.every((v) => typeof v === 'string')) {
+      return;
+    }
+
+    const sites: string[] = newValue;
+
+    const dnr = (browser as typeof browser & {
+      declarativeNetRequest?: {
+        getDynamicRules(): Promise<{ id: number }[]>;
+        updateDynamicRules(opts: { removeRuleIds: number[]; addRules: object[] }): Promise<void>;
+      };
+    }).declarativeNetRequest;
+
+    if (!dnr) {
+      return;
+    }
+
+    try {
+      const existing = await dnr.getDynamicRules();
+      const newRules = sites.map((site, idx) => ({
+        id: idx + 1,
+        priority: 1,
+        action: { type: 'block' },
+        condition: { urlFilter: site, resourceTypes: ['main_frame'] },
+      }));
+      await dnr.updateDynamicRules({
+        removeRuleIds: existing.map((r) => r.id),
+        addRules: newRules,
+      });
+    } catch {
+      // declarativeNetRequest may not be available if permission not declared
+    }
+  });
+
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
       await refreshBadge();
