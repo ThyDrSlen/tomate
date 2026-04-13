@@ -191,6 +191,8 @@ describe('storage helpers', () => {
         shortBreakDuration: 2_000,
         longBreakDuration: 5_000,
         openBreakTab: false,
+        playCompletionSound: true,
+        dailyGoal: 8,
       });
 
       // Verify that the version was persisted
@@ -216,6 +218,8 @@ describe('storage helpers', () => {
         shortBreakDuration: 3_000,
         longBreakDuration: 8_000,
         openBreakTab: true,
+        playCompletionSound: true,
+        dailyGoal: 8,
       });
     });
 
