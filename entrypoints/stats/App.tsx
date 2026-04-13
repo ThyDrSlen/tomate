@@ -1,6 +1,6 @@
 import { createMemo, createResource, createSignal, For, Show } from 'solid-js';
 
-import { getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
+import { getConfig, getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
 
 import Heatmap from '@/components/Heatmap';
@@ -73,10 +73,15 @@ function isValidDateString(value: string): boolean {
   return !isNaN(d.getTime());
 }
 
+
 export default function App() {
   const [yearData] = createResource(() => getHeatmapData(365));
   const [sessions] = createResource(() => getSessionHistory());
   const [todayCount] = createResource(() => getTodayCount());
+  const [config] = createResource(() => getConfig());
+
+  const dailyGoal = () => config()?.dailyGoal ?? 8;
+  const goalProgress = () => Math.min(100, Math.round(((todayCount() ?? 0) / dailyGoal()) * 100));
 
   const [activeFilter, setActiveFilter] = createSignal<FilterType>('all');
   const [customFrom, setCustomFrom] = createSignal('');
@@ -233,6 +238,25 @@ export default function App() {
                   label="Current streak"
                   value={`${streak()}d`}
                 />
+              </div>
+
+              <div class="bg-white rounded-xl p-4 shadow-sm border border-red-100 mb-6">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm font-semibold text-gray-700">Daily Goal</span>
+                  <span class="text-xs text-gray-500">{todayCount() ?? 0} / {dailyGoal()}</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                  <div
+                    class="h-2.5 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${goalProgress()}%`,
+                      "background-color": goalProgress() >= 100 ? '#16A34A' : '#DC2626',
+                    }}
+                  />
+                </div>
+                <Show when={goalProgress() >= 100}>
+                  <p class="text-xs text-green-600 mt-1 font-medium">Daily goal reached!</p>
+                </Show>
               </div>
 
               <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">

@@ -55,8 +55,7 @@ export const setTimerState = async (state: TimerState): Promise<void> => {
 
 export const getConfig = async (): Promise<TimerConfig> => {
   const stored = await getStoredValue<Partial<TimerConfig>>(KEYS.CONFIG);
-  if (!stored) return DEFAULT_CONFIG;
-  return { ...DEFAULT_CONFIG, ...stored };
+  return stored ? { ...DEFAULT_CONFIG, ...stored } : DEFAULT_CONFIG;
 };
 
 export const setConfig = async (config: TimerConfig): Promise<void> => {

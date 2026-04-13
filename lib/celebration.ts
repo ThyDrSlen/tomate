@@ -24,16 +24,20 @@ const CONFETTI_CONFIGS: Record<string, confetti.Options> = {
 
 /**
  * Play visual confetti and optionally the completion sound.
- * @param type   Celebration variant.
- * @param sound  Whether to play the completion sound (respects user setting, #105).
- *               Defaults to true for backwards compatibility.
+ * @param type      Celebration variant.
+ * @param playSound Whether to play the completion sound (respects user setting, #105).
+ *                  Defaults to true for backwards compatibility.
  */
-export const playCelebration = (type: 'work' | 'milestone' | 'break', sound = true): void => {
+export const playCelebration = (type: 'work' | 'milestone' | 'break', playSound = true): void => {
   confetti(CONFETTI_CONFIGS[type]);
 
-  if (sound) {
+  if (playSound) {
     try {
-      new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html')).play();
-    } catch {}
+      new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html'))
+        .play()
+        .catch(() => {});
+    } catch {
+      // Audio constructor can throw in non-browser environments
+    }
   }
 };

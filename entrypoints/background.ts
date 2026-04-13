@@ -59,7 +59,7 @@ export default defineBackground(() => {
         break;
       }
       case 'BREAK_SUGGESTION': {
-        text = `${state.completedToday}✓`;
+        text = `${todayCount}✓`;
         color = BADGE_GOLD;
         break;
       }
@@ -85,6 +85,8 @@ export default defineBackground(() => {
   };
 
   const startBadgeRefresh = async (): Promise<void> => {
+    // Clear any existing alarm first to avoid silent duplicate alarms (#97)
+    await browser.alarms.clear(ALARM_BADGE_REFRESH);
     await browser.alarms.create(ALARM_BADGE_REFRESH, { periodInMinutes: 1 });
   };
 
@@ -216,7 +218,29 @@ export default defineBackground(() => {
     }
   };
 
-  browser.runtime.onInstalled.addListener(async () => {
+  browser.runtime.onInstalled.addListener(async (details) => {
+    // On fresh install or update, remove any stale dynamic declarativeNetRequest rules (#103)
+    if (details.reason === 'install' || details.reason === 'update') {
+      try {
+        const existing = await (browser as typeof browser & {
+          declarativeNetRequest?: {
+            getDynamicRules(): Promise<{ id: number }[]>;
+            updateDynamicRules(opts: { removeRuleIds: number[] }): Promise<void>;
+          };
+        }).declarativeNetRequest?.getDynamicRules();
+        if (existing && existing.length > 0) {
+          await (browser as typeof browser & {
+            declarativeNetRequest?: {
+              updateDynamicRules(opts: { removeRuleIds: number[] }): Promise<void>;
+            };
+          }).declarativeNetRequest?.updateDynamicRules({
+            removeRuleIds: existing.map((r) => r.id),
+          });
+        }
+      } catch {
+        // declarativeNetRequest may not be available if permission not declared
+      }
+    }
     await recoverFromMissedAlarm();
   });
 
@@ -242,13 +266,15 @@ export default defineBackground(() => {
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
-      const workTitle = (() => { try { return browser.i18n.getMessage('notificationWorkTitle'); } catch { return ''; } })();
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: workTitle || '🍅 Tomate Complete!',
-        message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-      });
+      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+        const workTitle = (() => { try { return browser.i18n.getMessage('notificationWorkTitle'); } catch { return ''; } })();
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: workTitle || '🍅 Tomate Complete!',
+          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+        });
+      }
       if (config.openBreakTab !== false) {
         try {
           await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
@@ -259,17 +285,19 @@ export default defineBackground(() => {
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      const i18n = (key: string): string => { try { return browser.i18n.getMessage(key); } catch { return ''; } };
-      await browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-        title: state.phase === 'SHORT_BREAK'
-          ? (i18n('notificationShortBreakOver') || "Break's Over")
-          : (i18n('notificationLongBreakOver') || "Long Break's Over"),
-        message: state.phase === 'SHORT_BREAK'
-          ? (i18n('notificationShortBreakMessage') || 'Ready for another tomate?')
-          : (i18n('notificationLongBreakMessage') || "Refreshed? Let's go!"),
-      });
+      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+        const i18n = (key: string): string => { try { return browser.i18n.getMessage(key); } catch { return ''; } };
+        await browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+          title: state.phase === 'SHORT_BREAK'
+            ? (i18n('notificationShortBreakOver') || "Break's Over")
+            : (i18n('notificationLongBreakOver') || "Long Break's Over"),
+          message: state.phase === 'SHORT_BREAK'
+            ? (i18n('notificationShortBreakMessage') || 'Ready for another tomate?')
+            : (i18n('notificationLongBreakMessage') || "Refreshed? Let's go!"),
+        });
+      }
     }
 
     if (isActivePhase(completed.phase) && completed.endTime !== null) {

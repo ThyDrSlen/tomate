@@ -251,6 +251,8 @@ describe('timer state machine', () => {
       shortBreakDuration: 5 * 60 * 1000,
       longBreakDuration: 30 * 60 * 1000,
       openBreakTab: true,
+      playCompletionSound: true,
+      dailyGoal: 8,
     });
   });
 

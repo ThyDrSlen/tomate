@@ -11,6 +11,7 @@ import {
   setConfig,
   setCurrentLabel,
   setTimerState,
+  toDateKey,
 } from '@/lib/storage';
 import { DEFAULT_CONFIG, INITIAL_STATE, type TimerConfig, type TimerState } from '@/lib/types';
 
@@ -30,11 +31,13 @@ const createConfig = (overrides: Partial<TimerConfig> = {}): TimerConfig => ({
   ...overrides,
 });
 
+let testId = 0;
+
 const initBackground = async (): Promise<void> => {
   (globalThis as typeof globalThis & { defineBackground: (main?: () => void | Promise<void>) => { main?: () => void | Promise<void> } }).defineBackground =
     (main) => ({ main });
 
-  const background = (await import(`../background?test=${Math.random()}`)) as BackgroundModule;
+  const background = (await import(`../background?test=${testId++}`)) as BackgroundModule;
   await background.default.main?.();
 };
 
@@ -132,7 +135,7 @@ describe('background service worker', () => {
         label: 'Focus block',
         startTime: 1_000,
         endTime: 5_000,
-        date: '1970-01-01',
+        date: toDateKey(1_000),
         duration: 3_000,
       },
     ]);
@@ -217,7 +220,7 @@ describe('background service worker', () => {
         label: 'Recovered work',
         startTime: 1_000,
         endTime: 10_000,
-        date: '1970-01-01',
+        date: toDateKey(1_000),
         duration: 1_000,
       },
     ]);
