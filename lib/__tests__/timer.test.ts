@@ -209,6 +209,49 @@ describe('timer state machine', () => {
     });
   });
 
+  it('adjusts a long break to finish immediately when new duration is shorter than elapsed', () => {
+    const now = 50_000;
+    const state = createState({
+      phase: 'LONG_BREAK',
+      startTime: 30_000,
+      endTime: 60_000,
+      duration: 30_000,
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+    // 20 000 ms have elapsed (now - startTime); new duration is only 10 000 ms
+    // so recalculatedEndTime = 30 000 + 10 000 = 40 000, which is in the past → clamp to now
+    const config = createConfig({ longBreakDuration: 10_000 });
+
+    expect(adjustDuration(state, config, now)).toEqual({
+      ...state,
+      duration: 10_000,
+      endTime: now,
+    });
+  });
+
+  it('adjusts a long break with a longer duration into the future', () => {
+    const now = 50_000;
+    const state = createState({
+      phase: 'LONG_BREAK',
+      startTime: 30_000,
+      endTime: 60_000,
+      duration: 30_000,
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+    // new duration 45 000 ms → recalculatedEndTime = 30 000 + 45 000 = 75 000, still in the future
+    const config = createConfig({ longBreakDuration: 45_000 });
+
+    expect(adjustDuration(state, config, now)).toEqual({
+      ...state,
+      duration: 45_000,
+      endTime: 75_000,
+    });
+  });
+
   it('recovers a missed alarm for a completed work session', () => {
     const config = createConfig({ shortBreakDuration: 500 });
     const state = createState({

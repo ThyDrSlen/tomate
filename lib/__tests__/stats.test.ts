@@ -120,6 +120,16 @@ describe('computeStreak', () => {
     expect(computeStreak([makeSession(dateKey(0))])).toBe(1);
   });
 
+  it('returns 0 when the most recent session is two or more days ago (gap day)', () => {
+    expect(computeStreak([makeSession(dateKey(3))])).toBe(0);
+  });
+
+  it('returns 0 when the streak is broken (gap yesterday, only older sessions)', () => {
+    // Session 2 days ago but nothing yesterday or today — streak is 0
+    const sessions = [makeSession(dateKey(2))];
+    expect(computeStreak(sessions)).toBe(0);
+  });
+
   it('counts consecutive days including today', () => {
     const sessions = [
       makeSession(dateKey(0), 'a'),
@@ -129,10 +139,16 @@ describe('computeStreak', () => {
     expect(computeStreak(sessions)).toBe(3);
   });
 
-  it('returns 0 when the streak is broken (gap yesterday, only older sessions)', () => {
-    // Session 2 days ago but nothing yesterday or today — streak is 0
-    const sessions = [makeSession(dateKey(2))];
-    expect(computeStreak(sessions)).toBe(0);
+  it('counts a multi-day consecutive streak ending today', () => {
+    // today through 4 days ago → streak of 5
+    const sessions = [
+      makeSession(dateKey(0), 'a'),
+      makeSession(dateKey(1), 'b'),
+      makeSession(dateKey(2), 'c'),
+      makeSession(dateKey(3), 'd'),
+      makeSession(dateKey(4), 'e'),
+    ];
+    expect(computeStreak(sessions)).toBe(5);
   });
 
   it('counts a streak starting from yesterday when today has no session', () => {
@@ -155,12 +171,32 @@ describe('computeStreak', () => {
     expect(computeStreak(sessions)).toBe(2);
   });
 
+  it('stops counting at the first gap (longer run)', () => {
+    // today, yesterday, 2-days-ago, then a gap, then 4-days-ago
+    const sessions = [
+      makeSession(dateKey(0), 'a'),
+      makeSession(dateKey(1), 'b'),
+      makeSession(dateKey(2), 'c'),
+      makeSession(dateKey(4), 'd'),
+    ];
+    expect(computeStreak(sessions)).toBe(3);
+  });
+
   it('counts multiple sessions on the same day as one day', () => {
     const sessions = [
       makeSession(dateKey(0), 'a1'),
       makeSession(dateKey(0), 'a2'),
       makeSession(dateKey(0), 'a3'),
       makeSession(dateKey(1), 'b1'),
+    ];
+    expect(computeStreak(sessions)).toBe(2);
+  });
+
+  it('handles multiple sessions on the same day without double-counting (two-day streak)', () => {
+    const sessions = [
+      makeSession(dateKey(0), 'x1'),
+      makeSession(dateKey(0), 'x2'),
+      makeSession(dateKey(1), 'y'),
     ];
     expect(computeStreak(sessions)).toBe(2);
   });
