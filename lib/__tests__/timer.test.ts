@@ -261,4 +261,115 @@ describe('timer state machine', () => {
     expect(isActivePhase('IDLE')).toBe(false);
     expect(isActivePhase('BREAK_SUGGESTION')).toBe(false);
   });
+
+  // #511: startTimer() no-op guard when called from non-IDLE phase
+  it('startTimer is a no-op when called from WORKING phase', () => {
+    const state = createState({
+      phase: 'WORKING',
+      startTime: 1_000,
+      endTime: 26_000,
+      duration: 25_000,
+    });
+
+    expect(startTimer(state, DEFAULT_CONFIG, 5_000)).toBe(state);
+  });
+
+  it('startTimer is a no-op when called from SHORT_BREAK phase', () => {
+    const state = createState({
+      phase: 'SHORT_BREAK',
+      startTime: 26_000,
+      endTime: 31_000,
+      duration: 5_000,
+    });
+
+    expect(startTimer(state, DEFAULT_CONFIG, 28_000)).toBe(state);
+  });
+
+  // #512: completeTimer() default branch — IDLE and BREAK_SUGGESTION return state unchanged
+  it('completeTimer is a no-op when called from IDLE phase', () => {
+    const state = createState();
+
+    expect(completeTimer(state, DEFAULT_CONFIG, 5_000)).toBe(state);
+  });
+
+  it('completeTimer is a no-op when called from BREAK_SUGGESTION phase', () => {
+    const state = createState({
+      phase: 'BREAK_SUGGESTION',
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+
+    expect(completeTimer(state, DEFAULT_CONFIG, 5_000)).toBe(state);
+  });
+
+  // #513: abandonTimer() called from non-active phase (IDLE, BREAK_SUGGESTION)
+  it('abandonTimer is a no-op when called from IDLE phase', () => {
+    const state = createState();
+
+    expect(abandonTimer(state)).toBe(state);
+  });
+
+  it('abandonTimer is a no-op when called from BREAK_SUGGESTION phase', () => {
+    const state = createState({
+      phase: 'BREAK_SUGGESTION',
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+
+    expect(abandonTimer(state)).toBe(state);
+  });
+
+  // #392: adjustDuration() for LONG_BREAK phase — uses longBreakDuration and handles endTime-in-past
+  it('adjusts a long break duration using longBreakDuration config', () => {
+    const state = createState({
+      phase: 'LONG_BREAK',
+      startTime: 1_000,
+      endTime: 31_000,
+      duration: 30_000,
+    });
+    const config = createConfig({ longBreakDuration: 45_000 });
+
+    expect(adjustDuration(state, config, 5_000)).toEqual({
+      ...state,
+      duration: 45_000,
+      endTime: 46_000,
+    });
+  });
+
+  it('adjustDuration clamps endTime to now when new duration is shorter than elapsed for LONG_BREAK', () => {
+    const state = createState({
+      phase: 'LONG_BREAK',
+      startTime: 1_000,
+      endTime: 31_000,
+      duration: 30_000,
+    });
+    const config = createConfig({ longBreakDuration: 10_000 });
+    // elapsed = now(20_000) - startTime(1_000) = 19_000 > newDuration(10_000)
+    // recalculatedEndTime = 1_000 + 10_000 = 11_000 < now(20_000), so clamp to now
+
+    expect(adjustDuration(state, config, 20_000)).toEqual({
+      ...state,
+      duration: 10_000,
+      endTime: 20_000,
+    });
+  });
+
+  // #356: adjustDuration() invariant — endTime must never be before startTime after adjustment
+  it('adjustDuration endTime is never before startTime after adjustment', () => {
+    const state = createState({
+      phase: 'WORKING',
+      startTime: 5_000,
+      endTime: 30_000,
+      duration: 25_000,
+    });
+    const config = createConfig({ workDuration: 1_000 });
+    // recalculatedEndTime = 5_000 + 1_000 = 6_000 < now(10_000), clamps to now(10_000)
+    // endTime(10_000) >= startTime(5_000) — invariant holds
+
+    const result = adjustDuration(state, config, 10_000);
+
+    expect(result.endTime).toBeGreaterThanOrEqual(result.startTime!);
+  });
 });
