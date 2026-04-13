@@ -149,4 +149,23 @@ describe('storage helpers', () => {
     await setPendingCelebration(false);
     await expect(getPendingCelebration()).resolves.toBe(false);
   });
+
+  it('merges a v1 partial config with DEFAULT_CONFIG fields on read', async () => {
+    // Simulate a v1 config stored before openBreakTab, playCompletionSound, and dailyGoal existed
+    const v1Config = {
+      workDuration: 30 * 60 * 1000,
+      shortBreakDuration: 10 * 60 * 1000,
+      longBreakDuration: 20 * 60 * 1000,
+    };
+    await fakeBrowser.storage.local.set({ config: v1Config });
+
+    const result = await getConfig();
+
+    expect(result).toEqual({
+      ...v1Config,
+      openBreakTab: DEFAULT_CONFIG.openBreakTab,
+      playCompletionSound: DEFAULT_CONFIG.playCompletionSound,
+      dailyGoal: DEFAULT_CONFIG.dailyGoal,
+    });
+  });
 });
