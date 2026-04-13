@@ -101,7 +101,7 @@ describe('storage helpers', () => {
     expect(result.dailyGoal).toBe(DEFAULT_CONFIG.dailyGoal);
     expect(result.openBreakTab).toBe(DEFAULT_CONFIG.openBreakTab);
     // Version bumped to current
-    expect(result.configVersion).toBe(2);
+    expect(result.configVersion).toBe(DEFAULT_CONFIG.configVersion);
   });
 
   it('fills defaults for configs with an explicit configVersion of 1', async () => {
@@ -117,7 +117,7 @@ describe('storage helpers', () => {
 
     expect(result.dailyGoal).toBe(DEFAULT_CONFIG.dailyGoal);
     expect(result.openBreakTab).toBe(DEFAULT_CONFIG.openBreakTab);
-    expect(result.configVersion).toBe(2);
+    expect(result.configVersion).toBe(DEFAULT_CONFIG.configVersion);
   });
 
   it('returns a v2 config unchanged', async () => {
