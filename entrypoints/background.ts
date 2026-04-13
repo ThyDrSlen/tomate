@@ -116,6 +116,22 @@ export default defineBackground(() => {
     await setPendingCelebration(true);
   };
 
+  const reschedulePendingTimer = async (): Promise<void> => {
+    const state = await getTimerState();
+    const now = Date.now();
+
+    if (isActivePhase(state.phase) && state.endTime !== null && state.endTime > now) {
+      // Timer is still live — just recreate the alarm
+      await scheduleTimerAlarm(state.endTime);
+      await startBadgeRefresh();
+      await refreshBadge();
+      return;
+    }
+
+    // Timer expired or no active timer — fall back to full recovery
+    await recoverFromMissedAlarm();
+  };
+
   const recoverFromMissedAlarm = async (): Promise<void> => {
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const steps = recoverMissedAlarm(state, config);
@@ -125,7 +141,20 @@ export default defineBackground(() => {
       return;
     }
 
-    const recovered = steps[steps.length - 1].after;
+    const now = Date.now();
+    const rawRecovered = steps[steps.length - 1].after;
+
+    // Re-anchor the recovered state's start/end to the actual current time so
+    // break timers begin from "now" rather than from when the working phase ended.
+    let recovered = rawRecovered;
+    if (isActivePhase(rawRecovered.phase) && rawRecovered.duration !== null) {
+      recovered = {
+        ...rawRecovered,
+        startTime: now,
+        endTime: now + rawRecovered.duration,
+      };
+    }
+
     await setTimerState(recovered);
 
     for (const step of steps) {
@@ -238,7 +267,12 @@ export default defineBackground(() => {
         // declarativeNetRequest may not be available if permission not declared
       }
     }
-    await recoverFromMissedAlarm();
+
+    if (details.reason === 'update' || details.reason === 'chrome_update') {
+      await reschedulePendingTimer();
+    } else {
+      await recoverFromMissedAlarm();
+    }
   });
 
   browser.runtime.onStartup.addListener(async () => {
@@ -257,47 +291,61 @@ export default defineBackground(() => {
       return;
     }
 
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const completed = completeTimer(state, config);
-    await setTimerState(completed);
+    try {
+      const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+      const completed = completeTimer(state, config);
+      await setTimerState(completed);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
-      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: '🍅 Tomate Complete!',
-          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-        });
-      }
-      if (config.openBreakTab !== false) {
+      if (state.phase === 'WORKING') {
+        await persistCompletedSession(state, Date.now());
         try {
-          await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
-        } catch {
-          // tab creation can fail if no browser window is open
+          if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+            await browser.notifications.create({
+              type: 'basic',
+              iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+              title: '🍅 Tomate Complete!',
+              message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+            });
+          }
+        } catch (notifErr) {
+          console.error('[tomate] notification error:', notifErr);
+        }
+        if (config.openBreakTab !== false) {
+          try {
+            await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
+          } catch {
+            // tab creation can fail if no browser window is open
+          }
         }
       }
-    }
 
-    if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-        });
+      if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
+        try {
+          if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+            await browser.notifications.create({
+              type: 'basic',
+              iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+              title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+              message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+            });
+          }
+        } catch (notifErr) {
+          console.error('[tomate] notification error:', notifErr);
+        }
       }
-    }
 
-    if (isActivePhase(completed.phase) && completed.endTime !== null) {
-      await scheduleTimerAlarm(completed.endTime);
-      await startBadgeRefresh();
-    } else {
-      await clearActiveAlarms();
-    }
+      if (isActivePhase(completed.phase) && completed.endTime !== null) {
+        await scheduleTimerAlarm(completed.endTime);
+        await startBadgeRefresh();
+      } else {
+        await clearActiveAlarms();
+      }
 
-    await refreshBadge();
+      await refreshBadge();
+    } catch (err) {
+      console.error('[tomate] onAlarm error:', err);
+      await badgeApi.setBadgeText({ text: '!' });
+      await badgeApi.setBadgeBackgroundColor({ color: BADGE_RED });
+    }
   });
 });
