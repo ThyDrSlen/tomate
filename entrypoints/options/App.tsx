@@ -9,6 +9,7 @@ const MS_PER_MINUTE = 60_000;
 const isValidWork = (v: number) => v >= 1 && v <= 120;
 const isValidShortBreak = (v: number) => v >= 1 && v <= 30;
 const isValidLongBreak = (v: number) => v >= 5 && v <= 60;
+const isValidDailyGoal = (v: number) => v >= 1 && v <= 20;
 
 export default function App() {
   const [work, setWork] = createSignal(25);
@@ -16,7 +17,8 @@ export default function App() {
   const [longBreak, setLongBreak] = createSignal(30);
   const [openBreakTab, setOpenBreakTab] = createSignal(true);
   const [playCompletionSound, setPlayCompletionSound] = createSignal(true);
-  // Preserve fields not yet surfaced in UI (e.g. dailyGoal) so we don't wipe them on save
+  const [dailyGoal, setDailyGoal] = createSignal(DEFAULT_CONFIG.dailyGoal);
+  // Preserve fields not yet surfaced in UI so we don't wipe them on save
   const [extraConfig, setExtraConfig] = createSignal<Partial<TimerConfig>>({});
   const [saved, setSaved] = createSignal(false);
   const [error, setError] = createSignal('');
@@ -28,18 +30,19 @@ export default function App() {
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(config.openBreakTab !== false);
     setPlayCompletionSound(config.playCompletionSound !== false);
+    setDailyGoal(config.dailyGoal ?? DEFAULT_CONFIG.dailyGoal);
     // Stash any extra fields so round-trip save doesn't lose them
-    const { workDuration: _w, shortBreakDuration: _s, longBreakDuration: _l, openBreakTab: _o, playCompletionSound: _p, ...rest } = config;
+    const { workDuration: _w, shortBreakDuration: _s, longBreakDuration: _l, openBreakTab: _o, playCompletionSound: _p, dailyGoal: _d, ...rest } = config;
     setExtraConfig(rest);
   });
 
   const isValid = () =>
-    isValidWork(work()) && isValidShortBreak(shortBreak()) && isValidLongBreak(longBreak());
+    isValidWork(work()) && isValidShortBreak(shortBreak()) && isValidLongBreak(longBreak()) && isValidDailyGoal(dailyGoal());
 
   const handleSave = async () => {
     setError('');
     if (!isValid()) {
-      setError('Please check the duration values — work must be 1–120 min, short break 1–30 min, long break 5–60 min.');
+      setError('Please check the values — work 1–120 min, short break 1–30 min, long break 5–60 min, daily goal 1–20.');
       return;
     }
     const config: TimerConfig = {
@@ -50,6 +53,7 @@ export default function App() {
       longBreakDuration: longBreak() * MS_PER_MINUTE,
       openBreakTab: openBreakTab(),
       playCompletionSound: playCompletionSound(),
+      dailyGoal: dailyGoal(),
     };
     try {
       await setConfig(config);
@@ -72,7 +76,8 @@ export default function App() {
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(DEFAULT_CONFIG.openBreakTab);
     setPlayCompletionSound(DEFAULT_CONFIG.playCompletionSound);
-    setExtraConfig({ dailyGoal: DEFAULT_CONFIG.dailyGoal });
+    setDailyGoal(DEFAULT_CONFIG.dailyGoal);
+    setExtraConfig({});
     setError('');
   };
 
@@ -114,6 +119,18 @@ export default function App() {
               max={60}
               value={longBreak()}
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
+              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-gray-700">Daily Goal (sessions)</span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={dailyGoal()}
+              onInput={(e) => setDailyGoal(Number(e.currentTarget.value))}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </label>

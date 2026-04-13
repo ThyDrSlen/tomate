@@ -1,7 +1,8 @@
-import { createResource, For, Show } from 'solid-js';
+import { createEffect, createResource, createSignal, For, Show } from 'solid-js';
 
 import { getConfig, getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
+import { playCelebration } from '@/lib/celebration';
 
 import Heatmap from '@/components/Heatmap';
 
@@ -53,6 +54,15 @@ export default function App() {
 
   const dailyGoal = () => config()?.dailyGoal ?? 8;
   const goalProgress = () => Math.min(100, Math.round(((todayCount() ?? 0) / dailyGoal()) * 100));
+
+  const [hasCelebrated, setHasCelebrated] = createSignal(false);
+
+  createEffect(() => {
+    if (goalProgress() >= 100 && !hasCelebrated()) {
+      setHasCelebrated(true);
+      playCelebration('milestone');
+    }
+  });
 
   const total = () => computeTotalCount(sessions() ?? []);
   const week = () => computeWeekCount(sessions() ?? []);
@@ -112,7 +122,7 @@ export default function App() {
               />
             </div>
             <Show when={goalProgress() >= 100}>
-              <p class="text-xs text-green-600 mt-1 font-medium">Daily goal reached!</p>
+              <p class="text-xs text-green-600 mt-1 font-semibold">Daily goal reached! Great work today!</p>
             </Show>
           </div>
 
