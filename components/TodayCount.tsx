@@ -10,7 +10,7 @@ export default function TodayCount(props: TodayCountProps) {
     props.goal != null ? ` / ${props.goal}` : '';
 
   return (
-    <div class="mt-4 text-sm text-gray-500">
+    <div class="mt-4 text-sm text-gray-500 dark:text-gray-400">
       <span>
         🍅 {props.count}{goalText()} tomate{props.count !== 1 ? 's' : ''} today
       </span>
