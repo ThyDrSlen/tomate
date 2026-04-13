@@ -14,10 +14,12 @@ const KEYS = {
   SESSIONS: 'sessions',
   PENDING_CELEBRATION: 'pendingCelebration',
   CURRENT_LABEL: 'currentLabel',
+  BLOCKED_SITES: 'blockedSites',
 } as const;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
+export const MAX_SESSIONS = 500;
 
 const startOfLocalDay = (timestamp: number): Date => {
   const date = new Date(timestamp);
@@ -54,9 +56,31 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
 };
 
+const isQuotaError = (err: unknown): boolean =>
+  err instanceof Error && err.name === 'QuotaExceededError';
+
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  const trimmed = [...sessions, session].slice(-MAX_SESSIONS);
+
+  try {
+    await browser.storage.local.set({ [KEYS.SESSIONS]: trimmed });
+  } catch (err) {
+    if (!isQuotaError(err)) throw err;
+
+    // Drop the oldest half of existing sessions to free quota, then re-apply
+    // the MAX_SESSIONS cap before retrying so the write stays within bounds.
+    const reduced = sessions.slice(Math.ceil(sessions.length / 2));
+    const retryPayload = [...reduced, session].slice(-MAX_SESSIONS);
+    await browser.storage.local.set({ [KEYS.SESSIONS]: retryPayload });
+  }
+};
+
+export const getBlockedSites = async (): Promise<string[]> =>
+  (await getStoredValue<string[]>(KEYS.BLOCKED_SITES)) ?? [];
+
+export const setBlockedSites = async (sites: string[]): Promise<void> => {
+  await browser.storage.local.set({ [KEYS.BLOCKED_SITES]: sites });
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {

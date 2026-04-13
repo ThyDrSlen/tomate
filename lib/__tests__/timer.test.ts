@@ -209,6 +209,61 @@ describe('timer state machine', () => {
     });
   });
 
+  it('adjusts a long break duration to a future endTime', () => {
+    const state = createState({
+      phase: 'LONG_BREAK',
+      startTime: 5_000,
+      endTime: 35_000,
+      duration: 30_000,
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+    const config = createConfig({ longBreakDuration: 60_000 });
+
+    expect(adjustDuration(state, config, 10_000)).toEqual({
+      ...state,
+      duration: 60_000,
+      endTime: 65_000,
+    });
+  });
+
+  it('adjusts a long break to endTime=now when new duration is shorter than already-elapsed time', () => {
+    const now = 20_000;
+    const state = createState({
+      phase: 'LONG_BREAK',
+      startTime: 5_000,
+      endTime: 35_000,
+      duration: 30_000,
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+    // startTime(5_000) + newDuration(10_000) = 15_000 which is before now(20_000)
+    const config = createConfig({ longBreakDuration: 10_000 });
+
+    expect(adjustDuration(state, config, now)).toEqual({
+      ...state,
+      duration: 10_000,
+      endTime: now,
+    });
+  });
+
+  it('never sets endTime before startTime regardless of duration or now value', () => {
+    const state = createState({
+      phase: 'WORKING',
+      startTime: 1_000,
+      endTime: 26_000,
+      duration: 25_000,
+    });
+    // A 1 ms duration with now far past startTime — endTime must be >= startTime
+    const config = createConfig({ workDuration: 1 });
+    const result = adjustDuration(state, config, 999_999);
+
+    expect(result.endTime).not.toBeNull();
+    expect(result.endTime!).toBeGreaterThanOrEqual(result.startTime!);
+  });
+
   it('recovers a missed alarm for a completed work session', () => {
     const config = createConfig({ shortBreakDuration: 500 });
     const state = createState({

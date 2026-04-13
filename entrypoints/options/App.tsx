@@ -19,6 +19,7 @@ export default function App() {
   // Preserve fields not yet surfaced in UI (e.g. dailyGoal) so we don't wipe them on save
   const [extraConfig, setExtraConfig] = createSignal<Partial<TimerConfig>>({});
   const [saved, setSaved] = createSignal(false);
+  const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal('');
 
   onMount(async () => {
@@ -42,6 +43,7 @@ export default function App() {
       setError('Please check the duration values — work must be 1–120 min, short break 1–30 min, long break 5–60 min.');
       return;
     }
+    setSaving(true);
     const config: TimerConfig = {
       ...DEFAULT_CONFIG,
       ...extraConfig(),
@@ -55,6 +57,7 @@ export default function App() {
       await setConfig(config);
     } catch {
       setError('Failed to save settings to storage.');
+      setSaving(false);
       return;
     }
     try {
@@ -62,6 +65,7 @@ export default function App() {
     } catch {
       // Background may not be reachable; config is already saved
     }
+    setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -143,7 +147,7 @@ export default function App() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={!isValid()}
+            disabled={saving() || !isValid()}
             class="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Save
