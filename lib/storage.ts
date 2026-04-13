@@ -18,6 +18,7 @@ const KEYS = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
+const MAX_SESSIONS = 10_000;
 
 const startOfLocalDay = (timestamp: number): Date => {
   const date = new Date(timestamp);
@@ -54,9 +55,25 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
   await browser.storage.local.set({ [KEYS.CONFIG]: config });
 };
 
+const isQuotaError = (err: unknown): boolean =>
+  err instanceof Error && err.message.toLowerCase().includes('quota');
+
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  const updated = [...sessions, session];
+  const capped = updated.slice(-MAX_SESSIONS);
+
+  try {
+    await browser.storage.local.set({ [KEYS.SESSIONS]: capped });
+  } catch (err) {
+    if (!isQuotaError(err)) throw err;
+
+    const pruneCount = Math.max(1, Math.floor(sessions.length * 0.1));
+    const pruned = sessions.slice(pruneCount);
+    await browser.storage.local.set({
+      [KEYS.SESSIONS]: [...pruned, session].slice(-MAX_SESSIONS),
+    });
+  }
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
