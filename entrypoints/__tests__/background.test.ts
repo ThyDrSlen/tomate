@@ -230,6 +230,46 @@ describe('background service worker', () => {
     );
   });
 
+  it('does not persist a duplicate session if the alarm fires twice rapidly (#146)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    await initBackground();
+
+    // Fire the alarm twice concurrently to simulate Chrome's rapid double-fire
+    await Promise.all([
+      fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 }),
+      fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 }),
+    ]);
+
+    const history = await getSessionHistory();
+    expect(history).toHaveLength(1);
+  });
+
+  it('does not persist a duplicate session if START_TIMER fires concurrently (#128)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    await initBackground();
+
+    // Fire two START_TIMER messages concurrently to simulate the race condition
+    await Promise.all([
+      fakeBrowser.runtime.sendMessage({ action: 'START_TIMER' }),
+      fakeBrowser.runtime.sendMessage({ action: 'START_TIMER' }),
+    ]);
+
+    // Only one alarm should have been scheduled (not two)
+    const alarm = await fakeBrowser.alarms.get('tomate-timer');
+    expect(alarm).toBeDefined();
+
+    const state = await getTimerState();
+    expect(state.phase).toBe('WORKING');
+  });
+
   it('returns the current timer state for GET_STATE', async () => {
     const storedState = createState({
       phase: 'BREAK_SUGGESTION',
