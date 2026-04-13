@@ -162,7 +162,7 @@ describe('storage helpers', () => {
     quota.name = 'QuotaExceededError';
     const originalSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
     let callCount = 0;
-    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items: Record<string, unknown>) => {
       callCount += 1;
       if (callCount === 1) throw quota;
       return originalSet(items);
