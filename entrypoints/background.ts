@@ -24,6 +24,67 @@ import {
 } from '@/lib/storage';
 import type { CompletedSession, TimerConfig } from '@/lib/types';
 
+/**
+ * Chrome limits extensions to 5 000 dynamic declarativeNetRequest rules.
+ * We leave a small buffer so other rules (e.g. static ruleset) are never crowded out.
+ */
+const MAX_DNR_RULES = 4990;
+
+type DnrApi = {
+  getDynamicRules(): Promise<{ id: number }[]>;
+  updateDynamicRules(opts: {
+    addRules?: chrome.declarativeNetRequest.Rule[];
+    removeRuleIds?: number[];
+  }): Promise<void>;
+};
+
+/**
+ * Replace all dynamic blocking rules with one BLOCK rule per hostname in `sites`.
+ * Each hostname produces two rules (apex + www subdomain), so the effective
+ * per-site cost is 2 rule slots.
+ *
+ * If the total would exceed MAX_DNR_RULES the list is silently truncated so
+ * that `updateDynamicRules` never throws a quota error.
+ */
+const applyBlockingRules = async (sites: string[]): Promise<void> => {
+  const dnr = (browser as typeof browser & { declarativeNetRequest?: DnrApi }).declarativeNetRequest;
+  if (!dnr) return;
+
+  // Each site generates up to 2 rules (apex + www). Calculate how many fit.
+  const maxSites = Math.floor(MAX_DNR_RULES / 2);
+  let sanitised = sites.map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (sanitised.length > maxSites) {
+    console.warn('[tomate] Too many blocked sites — truncating to fit DNR limit');
+    sanitised = sanitised.slice(0, maxSites);
+  }
+
+  // Remove all existing dynamic rules first.
+  const existing = await dnr.getDynamicRules();
+  const removeRuleIds = existing.map((r) => r.id);
+
+  // Build new rules: one for the apex domain, one for *.domain
+  const addRules: chrome.declarativeNetRequest.Rule[] = [];
+  sanitised.forEach((host, i) => {
+    const baseId = i * 2 + 1; // 1-based, step 2
+    addRules.push(
+      {
+        id: baseId,
+        priority: 1,
+        action: { type: 'block' as const },
+        condition: { urlFilter: `||${host}^`, resourceTypes: ['main_frame'] as const },
+      },
+      {
+        id: baseId + 1,
+        priority: 1,
+        action: { type: 'block' as const },
+        condition: { urlFilter: `||www.${host}^`, resourceTypes: ['main_frame'] as const },
+      },
+    );
+  });
+
+  await dnr.updateDynamicRules({ removeRuleIds, addRules });
+};
+
 export type MessageAction =
   | { action: 'START_TIMER' }
   | { action: 'ABANDON_TIMER' }
@@ -149,6 +210,10 @@ export default defineBackground(() => {
         const nextState = startTimer(state, config);
         await setTimerState(nextState);
 
+        if (nextState.phase === 'WORKING') {
+          await applyBlockingRules(config.blockedSites ?? []);
+        }
+
         if (nextState.endTime !== null) {
           await scheduleTimerAlarm(nextState.endTime);
           await startBadgeRefresh();
@@ -160,6 +225,7 @@ export default defineBackground(() => {
       case 'ABANDON_TIMER': {
         const nextState = abandonTimer(state);
         await setTimerState(nextState);
+        await applyBlockingRules([]);
         await clearActiveAlarms();
         await refreshBadge();
         return nextState;
@@ -254,6 +320,8 @@ export default defineBackground(() => {
     await setTimerState(completed);
 
     if (state.phase === 'WORKING') {
+      // Session ended — unblock sites regardless of what the next phase is
+      await applyBlockingRules([]);
       await persistCompletedSession(state, Date.now());
       if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
         await browser.notifications.create({
