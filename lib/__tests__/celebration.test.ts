@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock canvas-confetti before importing celebration
-const mockConfetti = vi.fn();
+const { mockConfetti } = vi.hoisted(() => {
+  const mockConfetti = vi.fn();
+  return { mockConfetti };
+});
 vi.mock('canvas-confetti', () => ({ default: mockConfetti }));
 
 // Mock wxt/browser
