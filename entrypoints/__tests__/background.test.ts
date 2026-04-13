@@ -332,6 +332,137 @@ describe('background service worker', () => {
     expect(fakeBrowser.tabs.create).not.toHaveBeenCalled();
   });
 
+  it('recovers a missed WORKING alarm on startup (multi-hop: endTime hours in the past) and transitions to SHORT_BREAK', async () => {
+    // Simulate the browser being closed while a WORKING session was active.
+    // The endTime is several hours in the past, well past when the session ended.
+    const now = 3 * 60 * 60 * 1_000; // 3 hours in ms as "now"
+    const sessionStart = 1_000;
+    const sessionEnd = sessionStart + DEFAULT_CONFIG.workDuration; // endTime is hours before "now"
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    await setCurrentLabel('Overnight session');
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: sessionStart,
+        endTime: sessionEnd,
+        duration: DEFAULT_CONFIG.workDuration,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onStartup.trigger();
+
+    // A single recoverMissedAlarm hop: WORKING → SHORT_BREAK (startTime=now, endTime=now+shortBreak)
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: now,
+        endTime: now + DEFAULT_CONFIG.shortBreakDuration,
+        duration: DEFAULT_CONFIG.shortBreakDuration,
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+    );
+    // The completed WORKING session must be recorded
+    await expect(getSessionHistory()).resolves.toEqual([
+      {
+        id: expect.any(String),
+        label: 'Overnight session',
+        startTime: sessionStart,
+        endTime: now,
+        date: toDateKey(sessionStart),
+        duration: DEFAULT_CONFIG.workDuration,
+      },
+    ]);
+    // A timer alarm must be scheduled for the break's end
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
+      expect.objectContaining({
+        scheduledTime: now + DEFAULT_CONFIG.shortBreakDuration,
+      }),
+    );
+  });
+
+  it('recovers a missed SHORT_BREAK alarm on startup (multi-hop: break endTime in the past) and returns to IDLE', async () => {
+    // Simulate browser restart where a SHORT_BREAK was active but has also elapsed.
+    const now = 2 * 60 * 60 * 1_000; // 2 hours in ms as "now"
+    const breakStart = 1_000;
+    const breakEnd = breakStart + DEFAULT_CONFIG.shortBreakDuration; // endTime is hours before "now"
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    await setTimerState(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: breakStart,
+        endTime: breakEnd,
+        duration: DEFAULT_CONFIG.shortBreakDuration,
+        sessionCount: 1,
+        cyclePosition: 0,
+        completedToday: 1,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onStartup.trigger();
+
+    // A single recoverMissedAlarm hop: SHORT_BREAK → IDLE (cyclePosition increments)
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'IDLE',
+        startTime: null,
+        endTime: null,
+        duration: null,
+        sessionCount: 1,
+        cyclePosition: 1,
+        completedToday: 1,
+      }),
+    );
+    // No additional session should be recorded (only WORKING sessions are persisted)
+    await expect(getSessionHistory()).resolves.toEqual([]);
+    // All alarms must be cleared
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toBeUndefined();
+    await expect(fakeBrowser.alarms.get('badge-refresh')).resolves.toBeUndefined();
+  });
+
+  it('rolls back to previous state and skips side effects when setTimerState throws on alarm (#369)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    const workingState = createState({
+      phase: 'WORKING',
+      startTime: 1_000,
+      endTime: 4_000,
+      duration: 3_000,
+    });
+    await setTimerState(workingState);
+    await initBackground();
+
+    // Make the first setTimerState call (the "completed" write) throw a quota error,
+    // but allow the rollback write (second call) to succeed.
+    let callCount = 0;
+    const originalSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items: Record<string, unknown>) => {
+      if ('timerState' in items) {
+        callCount += 1;
+        if (callCount === 1) {
+          const err = new Error('QuotaExceededError');
+          err.name = 'QuotaExceededError';
+          throw err;
+        }
+      }
+      return originalSet(items as Parameters<typeof originalSet>[0]);
+    });
+
+    fakeBrowser.tabs.create = vi.fn().mockResolvedValue({ id: 1 });
+
+    await expect(
+      fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 }),
+    ).rejects.toThrow('QuotaExceededError');
+
+    // State must be rolled back to the original WORKING state
+    await expect(getTimerState()).resolves.toEqual(workingState);
+
+    // Side effects (tab open, session persist) must NOT have run
+    expect(fakeBrowser.tabs.create).not.toHaveBeenCalled();
+    await expect(getSessionHistory()).resolves.toEqual([]);
+  });
+
   it('applies blocking rules on startup when phase is WORKING and blocked sites are configured (#371)', async () => {
     // Freeze time so the timer has not yet elapsed; recoverFromMissedAlarm will
     // find no missed alarm and leave the phase as WORKING, after which

@@ -170,12 +170,12 @@ describe('storage helpers', () => {
     const quotaError = Object.assign(new Error('quota exceeded'), { name: 'QuotaExceededError' });
     const originalSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
     let firstCall = true;
-    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items: Record<string, unknown>) => {
       if (firstCall && 'sessions' in items) {
         firstCall = false;
         throw quotaError;
       }
-      return originalSet(items);
+      return originalSet(items as Parameters<typeof originalSet>[0]);
     });
 
     const newSession = createSession(existingCount * 1_000, { id: 'new-session' });
