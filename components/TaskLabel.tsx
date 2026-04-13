@@ -7,6 +7,7 @@ export default function TaskLabel(props: TaskLabelProps) {
   return (
     <input
       type="text"
+      aria-label="Task name"
       value={props.value}
       onInput={(e) => props.onChange(e.currentTarget.value)}
       placeholder="What are you working on?"
