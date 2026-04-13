@@ -255,7 +255,8 @@ export default defineBackground(() => {
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
-      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+      const hasNotifPermission = await browser.permissions.contains({ permissions: ['notifications'] });
+      if (hasNotifPermission) {
         await browser.notifications.create({
           type: 'basic',
           iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
@@ -273,7 +274,8 @@ export default defineBackground(() => {
     }
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+      const hasNotifPermission = await browser.permissions.contains({ permissions: ['notifications'] });
+      if (hasNotifPermission) {
         await browser.notifications.create({
           type: 'basic',
           iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
