@@ -32,6 +32,65 @@ export type MessageAction =
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
 
+// Base rule ID for dynamic declarativeNetRequest blocking rules.
+// Each blocked hostname occupies two consecutive IDs:
+//   DNR_RULE_ID_BASE + index * 2     → apex domain  (*://hostname/*)
+//   DNR_RULE_ID_BASE + index * 2 + 1 → all subdomains (*://*.hostname/*)
+const DNR_RULE_ID_BASE = 1000;
+
+type DnrApi = {
+  getDynamicRules(): Promise<{ id: number }[]>;
+  updateDynamicRules(opts: {
+    removeRuleIds?: number[];
+    addRules?: {
+      id: number;
+      priority: number;
+      action: { type: string };
+      condition: { urlFilter: string; resourceTypes: string[] };
+    }[];
+  }): Promise<void>;
+};
+
+const getDnr = (): DnrApi | undefined =>
+  (browser as typeof browser & { declarativeNetRequest?: DnrApi }).declarativeNetRequest;
+
+const syncBlockingRules = async (blockedSites: string[]): Promise<void> => {
+  const dnr = getDnr();
+  if (!dnr) return;
+
+  try {
+    // Remove all existing dynamic rules managed by this extension
+    const existing = await dnr.getDynamicRules();
+    const removeRuleIds = existing.map((r) => r.id);
+
+    // Build two rules per hostname: apex + wildcard subdomains
+    const addRules = blockedSites.flatMap((hostname, index) => [
+      {
+        id: DNR_RULE_ID_BASE + index * 2,
+        priority: 1,
+        action: { type: 'block' },
+        condition: {
+          urlFilter: `*://${hostname}/*`,
+          resourceTypes: ['main_frame'],
+        },
+      },
+      {
+        id: DNR_RULE_ID_BASE + index * 2 + 1,
+        priority: 1,
+        action: { type: 'block' },
+        condition: {
+          urlFilter: `*://*.${hostname}/*`,
+          resourceTypes: ['main_frame'],
+        },
+      },
+    ]);
+
+    await dnr.updateDynamicRules({ removeRuleIds, addRules });
+  } catch {
+    // declarativeNetRequest may not be available in all environments
+  }
+};
+
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
   const ALARM_BADGE_REFRESH = 'badge-refresh';
@@ -198,6 +257,7 @@ export default defineBackground(() => {
           await clearActiveAlarms();
         }
 
+        await syncBlockingRules(message.config.blockedSites ?? []);
         await refreshBadge();
         return nextState;
       }
@@ -208,27 +268,10 @@ export default defineBackground(() => {
   };
 
   browser.runtime.onInstalled.addListener(async (details) => {
-    // On fresh install or update, remove any stale dynamic declarativeNetRequest rules (#103)
+    // On fresh install or update, re-sync blocking rules from stored config (#100, #103)
     if (details.reason === 'install' || details.reason === 'update') {
-      try {
-        const existing = await (browser as typeof browser & {
-          declarativeNetRequest?: {
-            getDynamicRules(): Promise<{ id: number }[]>;
-            updateDynamicRules(opts: { removeRuleIds: number[] }): Promise<void>;
-          };
-        }).declarativeNetRequest?.getDynamicRules();
-        if (existing && existing.length > 0) {
-          await (browser as typeof browser & {
-            declarativeNetRequest?: {
-              updateDynamicRules(opts: { removeRuleIds: number[] }): Promise<void>;
-            };
-          }).declarativeNetRequest?.updateDynamicRules({
-            removeRuleIds: existing.map((r) => r.id),
-          });
-        }
-      } catch {
-        // declarativeNetRequest may not be available if permission not declared
-      }
+      const config = await getConfig();
+      await syncBlockingRules(config.blockedSites ?? []);
     }
     await recoverFromMissedAlarm();
   });
