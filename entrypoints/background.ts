@@ -116,6 +116,50 @@ export default defineBackground(() => {
     await setPendingCelebration(true);
   };
 
+  // DNR rule IDs for site-blocking start at this offset to avoid collisions
+  const DNR_RULE_ID_BASE = 1000;
+
+  type DnrBrowser = typeof browser & {
+    declarativeNetRequest?: {
+      getDynamicRules(): Promise<{ id: number }[]>;
+      updateDynamicRules(opts: { addRules?: DnrRule[]; removeRuleIds?: number[] }): Promise<void>;
+    };
+  };
+
+  type DnrRule = {
+    id: number;
+    priority: number;
+    action: { type: string };
+    condition: { requestDomains: string[] };
+  };
+
+  const applyBlockingRules = async (phase: string, blockedSites: string[]): Promise<void> => {
+    const dnr = (browser as DnrBrowser).declarativeNetRequest;
+    if (!dnr) {
+      return;
+    }
+
+    try {
+      // Remove all existing dynamic rules managed by Tomate
+      const existing = await dnr.getDynamicRules();
+      const toRemove = existing.filter((r) => r.id >= DNR_RULE_ID_BASE).map((r) => r.id);
+
+      const toAdd: DnrRule[] =
+        phase === 'WORKING' && blockedSites.length > 0
+          ? blockedSites.map((site, i) => ({
+              id: DNR_RULE_ID_BASE + i,
+              priority: 1,
+              action: { type: 'block' },
+              condition: { requestDomains: [site] },
+            }))
+          : [];
+
+      await dnr.updateDynamicRules({ addRules: toAdd, removeRuleIds: toRemove });
+    } catch {
+      // declarativeNetRequest may not be available if permission not declared
+    }
+  };
+
   const recoverFromMissedAlarm = async (): Promise<void> => {
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const recovered = recoverMissedAlarm(state, config);
@@ -235,6 +279,10 @@ export default defineBackground(() => {
 
   browser.runtime.onStartup.addListener(async () => {
     await recoverFromMissedAlarm();
+    // Re-apply DNR blocking rules after startup — recovery may keep phase=WORKING
+    // and the rules are not persisted across browser restarts (#371)
+    const [postRecoveryState, config] = await Promise.all([getTimerState(), getConfig()]);
+    await applyBlockingRules(postRecoveryState.phase, config.blockedSites);
   });
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));

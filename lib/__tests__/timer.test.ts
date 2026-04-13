@@ -251,6 +251,7 @@ describe('timer state machine', () => {
       openBreakTab: true,
       playCompletionSound: true,
       dailyGoal: 8,
+      blockedSites: [],
     });
   });
 
