@@ -250,6 +250,12 @@ export default defineBackground(() => {
     }
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+
+    if (!isActivePhase(state.phase)) {
+      await browser.alarms.clear('tomate-timer');
+      return;
+    }
+
     const completed = completeTimer(state, config);
     await setTimerState(completed);
 
