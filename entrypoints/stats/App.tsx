@@ -1,4 +1,5 @@
-import { createResource, For, Show } from 'solid-js';
+import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import { browser } from 'wxt/browser';
 
 import { getConfig, getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
@@ -46,18 +47,31 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
 }
 
 export default function App() {
-  const [yearData] = createResource(() => getHeatmapData(365));
-  const [sessions] = createResource(() => getSessionHistory());
-  const [todayCount] = createResource(() => getTodayCount());
+  // #382: refetch trigger — incremented whenever chrome.storage.local changes
+  const [refetchTick, setRefetchTick] = createSignal(0);
+
+  onMount(() => {
+    const handler = () => setRefetchTick((t) => t + 1);
+    browser.storage.onChanged.addListener(handler);
+    onCleanup(() => browser.storage.onChanged.removeListener(handler));
+  });
+
+  // Pass refetchTick as a source so createResource re-fetches on storage changes
+  const [yearData] = createResource(refetchTick, () => getHeatmapData(365));
+  const [sessions] = createResource(refetchTick, () => getSessionHistory());
+  const [todayCount] = createResource(refetchTick, () => getTodayCount());
   const [config] = createResource(() => getConfig());
 
-  const dailyGoal = () => config()?.dailyGoal ?? 8;
-  const goalProgress = () => Math.min(100, Math.round(((todayCount() ?? 0) / dailyGoal()) * 100));
+  const dailyGoal = createMemo(() => config()?.dailyGoal ?? 8);
+  const goalProgress = createMemo(() =>
+    Math.min(100, Math.round(((todayCount() ?? 0) / dailyGoal()) * 100)),
+  );
 
-  const total = () => computeTotalCount(sessions() ?? []);
-  const week = () => computeWeekCount(sessions() ?? []);
-  const bestDay = () => computeBestDay(sessions() ?? []);
-  const streak = () => computeStreak(sessions() ?? []);
+  // #260: wrap derived computations in createMemo so they only re-run when sessions() changes
+  const total = createMemo(() => computeTotalCount(sessions() ?? []));
+  const week = createMemo(() => computeWeekCount(sessions() ?? []));
+  const bestDay = createMemo(() => computeBestDay(sessions() ?? []));
+  const streak = createMemo(() => computeStreak(sessions() ?? []));
 
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
