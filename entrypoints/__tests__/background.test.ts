@@ -48,6 +48,8 @@ describe('background service worker', () => {
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+    // fake-browser does not implement permissions.contains — stub it to grant all permissions
+    fakeBrowser.permissions.contains = vi.fn().mockResolvedValue(true);
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
