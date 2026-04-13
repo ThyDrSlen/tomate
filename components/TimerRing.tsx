@@ -5,12 +5,18 @@ type TimerRingProps = {
   phase: TimerPhase;
 };
 
-const PHASE_COLORS: Record<TimerPhase, string> = {
-  IDLE: '#9CA3AF',
-  WORKING: '#DC2626',
-  SHORT_BREAK: '#16A34A',
-  LONG_BREAK: '#16A34A',
-  BREAK_SUGGESTION: '#CA8A04',
+/**
+ * Tailwind color classes for each phase.
+ * `text-*` sets `currentColor` which is used as the SVG `stroke` on the
+ * progress arc.  Each pair includes a `dark:` variant so the ring is
+ * legible in both light and dark mode.
+ */
+const PHASE_CLASSES: Record<TimerPhase, string> = {
+  IDLE: 'text-gray-400 dark:text-gray-500',
+  WORKING: 'text-red-600 dark:text-red-500',
+  SHORT_BREAK: 'text-green-600 dark:text-green-500',
+  LONG_BREAK: 'text-green-600 dark:text-green-500',
+  BREAK_SUGGESTION: 'text-yellow-600 dark:text-yellow-500',
 };
 
 const SIZE = 160;
@@ -20,25 +26,32 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 export default function TimerRing(props: TimerRingProps) {
   const offset = () => CIRCUMFERENCE * (1 - props.progress);
-  const color = () => PHASE_COLORS[props.phase];
+  const colorClass = () => PHASE_CLASSES[props.phase];
 
   return (
-    <svg width={SIZE} height={SIZE} class="timer-ring" viewBox={`0 0 ${SIZE} ${SIZE}`}>
+    <svg
+      width={SIZE}
+      height={SIZE}
+      class={`timer-ring ${colorClass()}`}
+      viewBox={`0 0 ${SIZE} ${SIZE}`}
+    >
       <title>Timer progress</title>
+      {/* Track ring — uses a neutral color in both light and dark mode */}
       <circle
         cx={SIZE / 2}
         cy={SIZE / 2}
         r={RADIUS}
         fill="none"
-        stroke="#E5E7EB"
+        class="stroke-gray-200 dark:stroke-gray-700"
         stroke-width={STROKE}
       />
+      {/* Progress arc — inherits `currentColor` from the parent SVG class */}
       <circle
         cx={SIZE / 2}
         cy={SIZE / 2}
         r={RADIUS}
         fill="none"
-        stroke={color()}
+        stroke="currentColor"
         stroke-width={STROKE}
         stroke-linecap="round"
         stroke-dasharray={String(CIRCUMFERENCE)}
