@@ -121,6 +121,12 @@ export default defineBackground(() => {
     const recovered = recoverMissedAlarm(state, config);
 
     if (!recovered) {
+      // No missed alarm — but if a timer is actively running, Chrome may have
+      // cleared its alarm during an update/restart, so reschedule it (#142).
+      if (isActivePhase(state.phase) && state.endTime !== null) {
+        await scheduleTimerAlarm(state.endTime);
+        await startBadgeRefresh();
+      }
       await refreshBadge();
       return;
     }
@@ -253,8 +259,9 @@ export default defineBackground(() => {
     const completed = completeTimer(state, config);
     await setTimerState(completed);
 
+    const endTime = Date.now();
+
     if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
       if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
         await browser.notifications.create({
           type: 'basic',
@@ -290,6 +297,11 @@ export default defineBackground(() => {
       await clearActiveAlarms();
     }
 
-    await refreshBadge();
+    // persistCompletedSession (writes session history) and refreshBadge (reads
+    // timer state for the badge) are independent — run them in parallel (#176).
+    await Promise.all([
+      state.phase === 'WORKING' ? persistCompletedSession(state, endTime) : Promise.resolve(),
+      refreshBadge(),
+    ]);
   });
 });
