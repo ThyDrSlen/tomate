@@ -18,6 +18,7 @@ const KEYS = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LABEL_LENGTH = 50;
+const MAX_SESSIONS = 10_000;
 
 const startOfLocalDay = (timestamp: number): Date => {
   const date = new Date(timestamp);
@@ -55,8 +56,21 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
 };
 
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
-  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  let sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  let updated = [...sessions, session].slice(-MAX_SESSIONS);
+
+  try {
+    await browser.storage.local.set({ [KEYS.SESSIONS]: updated });
+  } catch (err) {
+    if (err instanceof Error && err.name.includes('QuotaExceeded')) {
+      // Evict the oldest half and re-apply the MAX_SESSIONS cap before retrying.
+      sessions = sessions.slice(Math.ceil(sessions.length / 2));
+      updated = [...sessions, session].slice(-MAX_SESSIONS);
+      await browser.storage.local.set({ [KEYS.SESSIONS]: updated });
+    } else {
+      throw err;
+    }
+  }
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
