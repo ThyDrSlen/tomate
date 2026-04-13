@@ -12,6 +12,8 @@ type HeatmapCell = {
   dayOfWeek: number;
 };
 
+const MIN_DISPLAY_DAYS = 12 * 7; // always show at least 12 weeks
+
 const INTENSITY_COLORS = [
   '#F3F4F6',
   '#FCA5A5',
@@ -50,7 +52,9 @@ const generateHeatmapGrid = (
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  for (let i = days - 1; i >= 0; i--) {
+  const effectiveDays = Math.max(days, MIN_DISPLAY_DAYS);
+
+  for (let i = effectiveDays - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     const key = toDateKey(date);
