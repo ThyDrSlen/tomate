@@ -132,6 +132,53 @@ describe('storage helpers', () => {
     await expect(getTodayCount()).resolves.toBe(2);
   });
 
+  it('caps stored sessions at MAX_SESSIONS (500) when many are added', async () => {
+    // Pre-populate storage with 500 sessions directly so the cap is already at
+    // the limit, then add one more — the oldest entry must be evicted.
+    const base = new Date(2026, 0, 1).getTime();
+    const existing: CompletedSession[] = Array.from({ length: 500 }, (_, i) =>
+      createSession(base + i * 1_000, { id: `pre-${i}` }),
+    );
+    await fakeBrowser.storage.local.set({ sessions: existing });
+
+    const newSession = createSession(base + 500 * 1_000, { id: 'new' });
+    await addCompletedSession(newSession);
+
+    const stored = await getSessionHistory();
+    expect(stored).toHaveLength(500);
+    expect(stored[0].id).toBe('pre-1'); // oldest (pre-0) evicted
+    expect(stored[stored.length - 1].id).toBe('new');
+  });
+
+  it('retries with reduced sessions on QuotaExceededError and re-applies MAX_SESSIONS cap', async () => {
+    const base = new Date(2026, 0, 1).getTime();
+    const existing: CompletedSession[] = Array.from({ length: 100 }, (_, i) =>
+      createSession(base + i * 1_000, { id: `s-${i}` }),
+    );
+    await fakeBrowser.storage.local.set({ sessions: existing });
+
+    // Make the first set() call throw a QuotaExceededError; subsequent calls succeed.
+    const quota = new Error('QuotaExceededError');
+    quota.name = 'QuotaExceededError';
+    const originalSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
+    let callCount = 0;
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+      callCount += 1;
+      if (callCount === 1) throw quota;
+      return originalSet(items);
+    });
+
+    const newSession = createSession(base + 200 * 1_000, { id: 'retry-session' });
+    await addCompletedSession(newSession);
+
+    const stored = await getSessionHistory();
+    // After dropping oldest half (50) and adding newSession: 50 + 1 = 51, all <= 500.
+    expect(stored).toHaveLength(51);
+    expect(stored[stored.length - 1].id).toBe('retry-session');
+    // Entries from the dropped half must not appear.
+    expect(stored.some((s) => s.id === 's-0')).toBe(false);
+  });
+
   it('truncates labels to 50 characters before storing', async () => {
     const label = 'x'.repeat(51);
 
