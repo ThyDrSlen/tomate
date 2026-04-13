@@ -56,6 +56,11 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
 const isQuotaError = (err: unknown): boolean =>
   err instanceof Error && err.name === 'QuotaExceededError';
 
+/**
+ * Appends a completed session to storage, enforcing the MAX_SESSIONS cap.
+ * On QuotaExceededError the oldest half of existing sessions is dropped and
+ * the write is retried with the cap re-applied.
+ */
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
   const trimmed = [...sessions, session].slice(-MAX_SESSIONS);
