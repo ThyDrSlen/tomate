@@ -120,13 +120,18 @@ export default function App() {
             <h2 class="text-sm font-semibold text-gray-700 mb-3">365-day activity</h2>
             <Heatmap days={365} cellSize={14} data={yearData() ?? {}} />
 
-            <div class="flex items-center gap-1 mt-3 text-[10px] text-gray-400">
+            <div
+              class="flex items-center gap-1 mt-3 text-[10px] text-gray-400"
+              role="group"
+              aria-label="Session intensity legend: Less to More"
+            >
               <span>Less</span>
               <For each={INTENSITY_LEGEND}>
                 {(item) => (
                   <div
                     class="w-3 h-3 rounded-sm"
                     style={{ "background-color": item.color }}
+                    aria-hidden="true"
                     title={item.label}
                   />
                 )}
