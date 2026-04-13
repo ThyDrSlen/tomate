@@ -9,6 +9,8 @@ import {
   getCurrentLabel,
   getHeatmapData,
   getPendingCelebration,
+  getRecentSessions,
+  getSessionCount,
   getSessionHistory,
   getTimerState,
   getTodayCount,
@@ -102,6 +104,61 @@ describe('storage helpers', () => {
     await addCompletedSession(outsideRange);
 
     await expect(getSessionHistory(2)).resolves.toEqual([withinRange, today]);
+  });
+
+  it('getRecentSessions returns the N most recent sessions in insertion order', async () => {
+    const t1 = new Date(2026, 2, 15, 9, 0, 0).getTime();
+    const t2 = new Date(2026, 2, 16, 9, 0, 0).getTime();
+    const t3 = new Date(2026, 2, 17, 9, 0, 0).getTime();
+
+    const s1 = createSession(t1, { id: 's1' });
+    const s2 = createSession(t2, { id: 's2' });
+    const s3 = createSession(t3, { id: 's3' });
+
+    await addCompletedSession(s1);
+    await addCompletedSession(s2);
+    await addCompletedSession(s3);
+
+    await expect(getRecentSessions(2)).resolves.toEqual([s2, s3]);
+  });
+
+  it('getRecentSessions returns all sessions when limit exceeds total count', async () => {
+    const t1 = new Date(2026, 2, 15, 9, 0, 0).getTime();
+    const s1 = createSession(t1, { id: 's1' });
+
+    await addCompletedSession(s1);
+
+    await expect(getRecentSessions(10)).resolves.toEqual([s1]);
+  });
+
+  it('getRecentSessions returns empty array for zero limit', async () => {
+    const t1 = new Date(2026, 2, 15, 9, 0, 0).getTime();
+    await addCompletedSession(createSession(t1, { id: 's1' }));
+
+    await expect(getRecentSessions(0)).resolves.toEqual([]);
+  });
+
+  it('getRecentSessions returns empty array for negative limit', async () => {
+    const t1 = new Date(2026, 2, 15, 9, 0, 0).getTime();
+    await addCompletedSession(createSession(t1, { id: 's1' }));
+
+    await expect(getRecentSessions(-5)).resolves.toEqual([]);
+  });
+
+  it('getRecentSessions returns empty array when storage is empty', async () => {
+    await expect(getRecentSessions(5)).resolves.toEqual([]);
+  });
+
+  it('getSessionCount returns 0 when storage is empty', async () => {
+    await expect(getSessionCount()).resolves.toBe(0);
+  });
+
+  it('getSessionCount returns the total number of stored sessions', async () => {
+    const t1 = new Date(2026, 2, 15, 9, 0, 0).getTime();
+    await addCompletedSession(createSession(t1, { id: 's1' }));
+    await addCompletedSession(createSession(t1 + 1_000, { id: 's2' }));
+
+    await expect(getSessionCount()).resolves.toBe(2);
   });
 
   it('aggregates heatmap counts by local date key', async () => {
