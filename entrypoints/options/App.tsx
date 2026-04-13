@@ -18,6 +18,7 @@ export default function App() {
   const [playCompletionSound, setPlayCompletionSound] = createSignal(true);
   // Preserve fields not yet surfaced in UI (e.g. dailyGoal) so we don't wipe them on save
   const [extraConfig, setExtraConfig] = createSignal<Partial<TimerConfig>>({});
+  const [saving, setSaving] = createSignal(false);
   const [saved, setSaved] = createSignal(false);
   const [error, setError] = createSignal('');
 
@@ -42,6 +43,7 @@ export default function App() {
       setError('Please check the duration values — work must be 1–120 min, short break 1–30 min, long break 5–60 min.');
       return;
     }
+    setSaving(true);
     const config: TimerConfig = {
       ...DEFAULT_CONFIG,
       ...extraConfig(),
@@ -52,18 +54,22 @@ export default function App() {
       playCompletionSound: playCompletionSound(),
     };
     try {
-      await setConfig(config);
-    } catch {
-      setError('Failed to save settings to storage.');
-      return;
+      try {
+        await setConfig(config);
+      } catch {
+        setError('Failed to save settings to storage.');
+        return;
+      }
+      try {
+        await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
+      } catch {
+        // Background may not be reachable; config is already saved
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
     }
-    try {
-      await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
-    } catch {
-      // Background may not be reachable; config is already saved
-    }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
   };
 
   const handleReset = () => {
@@ -143,7 +149,7 @@ export default function App() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={!isValid()}
+            disabled={!isValid() || saving()}
             class="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Save
