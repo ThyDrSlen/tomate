@@ -232,6 +232,58 @@ describe('timer state machine', () => {
     });
   });
 
+  it('recovers a missed alarm for a completed short break — transitions to IDLE, increments cyclePosition', () => {
+    const state = createState({
+      phase: 'SHORT_BREAK',
+      startTime: 2_000,
+      endTime: 2_500,
+      duration: 500,
+      sessionCount: 2,
+      cyclePosition: 1,
+      completedToday: 2,
+    });
+
+    expect(recoverMissedAlarm(state, DEFAULT_CONFIG, 5_000)).toEqual(
+      createState({
+        sessionCount: 2,
+        cyclePosition: 2,
+        completedToday: 2,
+      }),
+    );
+  });
+
+  it('recovers a missed alarm for a completed long break — transitions to IDLE, resets cyclePosition to 0', () => {
+    const state = createState({
+      phase: 'LONG_BREAK',
+      startTime: 3_000,
+      endTime: 4_800_000,
+      duration: 4_797_000,
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+
+    expect(recoverMissedAlarm(state, DEFAULT_CONFIG, 5_000_000)).toEqual(
+      createState({
+        sessionCount: 4,
+        cyclePosition: 0,
+        completedToday: 4,
+      }),
+    );
+  });
+
+  it('returns null when recovering a missed alarm on a non-expired active timer', () => {
+    const state = createState({
+      phase: 'WORKING',
+      startTime: 1_000,
+      endTime: 10_000,
+      duration: 9_000,
+    });
+
+    // endTime (10_000) is in the future relative to now (5_000)
+    expect(recoverMissedAlarm(state, DEFAULT_CONFIG, 5_000)).toBeNull();
+  });
+
   it('returns null when recovering a missed alarm from idle', () => {
     expect(recoverMissedAlarm(createState(), DEFAULT_CONFIG, 5_000)).toBeNull();
   });

@@ -82,6 +82,20 @@ describe('storage helpers', () => {
     await expect(getConfig()).resolves.toEqual(config);
   });
 
+  it('merges a partially-stored config with DEFAULT_CONFIG defaults', async () => {
+    const partialConfig = { workDuration: 50 * 60 * 1000 } as Partial<TimerConfig>;
+    await fakeBrowser.storage.local.set({ config: partialConfig });
+
+    const result = await getConfig();
+
+    expect(result.workDuration).toBe(50 * 60 * 1000);
+    expect(result.shortBreakDuration).toBe(DEFAULT_CONFIG.shortBreakDuration);
+    expect(result.longBreakDuration).toBe(DEFAULT_CONFIG.longBreakDuration);
+    expect(result.openBreakTab).toBe(DEFAULT_CONFIG.openBreakTab);
+    expect(result.playCompletionSound).toBe(DEFAULT_CONFIG.playCompletionSound);
+    expect(result.dailyGoal).toBe(DEFAULT_CONFIG.dailyGoal);
+  });
+
   it('adds a completed session and returns it from history', async () => {
     const session = createSession(new Date(2026, 2, 15, 9, 0, 0).getTime());
 
