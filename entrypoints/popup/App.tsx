@@ -49,8 +49,9 @@ export default function App() {
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const storageListener = () => { refreshStats().catch(console.error); };
+    browser.storage.onChanged.addListener(storageListener);
+    onCleanup(() => browser.storage.onChanged.removeListener(storageListener));
   });
 
   createEffect(() => {
