@@ -6,10 +6,6 @@ import { DEFAULT_CONFIG, type TimerConfig } from '@/lib/types';
 
 const MS_PER_MINUTE = 60_000;
 
-const isValidWork = (v: number) => v >= 1 && v <= 120;
-const isValidShortBreak = (v: number) => v >= 1 && v <= 30;
-const isValidLongBreak = (v: number) => v >= 5 && v <= 60;
-
 export default function App() {
   const [work, setWork] = createSignal(25);
   const [shortBreak, setShortBreak] = createSignal(5);
@@ -38,7 +34,7 @@ export default function App() {
   });
 
   const isValid = () =>
-    isValidWork(work()) && isValidShortBreak(shortBreak()) && isValidLongBreak(longBreak());
+    isValidWork() && isValidShortBreak() && isValidLongBreak();
 
   const handleSave = async () => {
     setError('');
