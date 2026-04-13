@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { getConfig, setConfig } from '@/lib/storage';
@@ -21,6 +21,9 @@ export default function App() {
   const [saving, setSaving] = createSignal(false);
   const [saved, setSaved] = createSignal(false);
   const [error, setError] = createSignal('');
+
+  let savedTimeoutId: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(savedTimeoutId));
 
   onMount(async () => {
     const config = await getConfig();
@@ -66,7 +69,8 @@ export default function App() {
         // Background may not be reachable; config is already saved
       }
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      clearTimeout(savedTimeoutId);
+      savedTimeoutId = setTimeout(() => setSaved(false), 2000);
     } finally {
       setSaving(false);
     }
