@@ -63,7 +63,17 @@ export default function App() {
     <div class="min-h-screen bg-red-50 py-10 px-4">
       <div class="max-w-[800px] mx-auto">
         <div class="flex items-center justify-between mb-6">
-          <h1 class="text-2xl font-bold text-red-600">Tomate Stats</h1>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Back to timer"
+              class="text-red-400 hover:text-red-600 transition-colors"
+              onClick={() => window.close()}
+            >
+              ←
+            </button>
+            <h1 class="text-2xl font-bold text-red-600">Tomate Stats</h1>
+          </div>
           <Show when={(sessions() ?? []).length > 0}>
             <button
               class="text-sm px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-100 transition-colors"
