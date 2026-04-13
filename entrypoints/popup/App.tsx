@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -114,7 +114,8 @@ export default function App() {
           type="button"
           onClick={() => browser.runtime.openOptionsPage()}
           class="text-gray-400 hover:text-gray-600 text-lg"
-          aria-label="Settings"
+          title="Settings"
+          aria-label="Open settings"
         >
           ⚙️
         </button>
@@ -147,6 +148,11 @@ export default function App() {
 
       <div class="mt-2 w-full">
         <Heatmap days={120} data={heatmapData()} />
+        <Show when={Object.values(heatmapData()).every((v) => v === 0)}>
+          <p class="text-center text-xs text-gray-400 mt-1">
+            Complete sessions to see your activity
+          </p>
+        </Show>
       </div>
 
       <button
