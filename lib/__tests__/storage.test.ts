@@ -264,7 +264,7 @@ describe('storage helpers', () => {
 
       // Mock first write to throw quota error, second to succeed
       let callCount = 0;
-      vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+      vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items: Record<string, unknown>) => {
         callCount++;
         if (callCount === 1) {
           const err = new Error('QUOTA_BYTES exceeded');

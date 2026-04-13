@@ -404,7 +404,7 @@ describe('background service worker', () => {
       await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 0 });
 
       // Should have loaded timerState and sessions (for todayCount), not config
-      const keys = getSpy.mock.calls.flatMap((call) => {
+      const keys = getSpy.mock.calls.flatMap((call: [string | string[], ...unknown[]]) => {
         const arg = call[0];
         return Array.isArray(arg) ? arg : [arg];
       });

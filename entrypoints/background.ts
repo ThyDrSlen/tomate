@@ -118,17 +118,20 @@ export default defineBackground(() => {
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const recovered = recoverMissedAlarm(state, config);
+    const steps = recoverMissedAlarm(state, config);
 
-    if (!recovered) {
+    if (steps.length === 0) {
       await refreshBadge();
       return;
     }
 
+    const recovered = steps[steps.length - 1].after;
     await setTimerState(recovered);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
+    for (const step of steps) {
+      if (step.before.phase === 'WORKING') {
+        await persistCompletedSession(step.before, Date.now());
+      }
     }
 
     if (recovered.phase === 'SHORT_BREAK' && recovered.endTime !== null) {

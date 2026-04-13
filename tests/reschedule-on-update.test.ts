@@ -7,9 +7,9 @@ const FIVE_MINUTES = 5 * 60 * 1_000;
 const WORK_DURATION = DEFAULT_CONFIG.workDuration; // 25 min
 
 describe('recoverMissedAlarm — timer still active (endTime in the future)', () => {
-  it('returns null when WORKING timer has not yet expired', () => {
+  it('returns empty array when WORKING timer has not yet expired', () => {
     // Scenario: extension updates while user has 5 min left on a work session.
-    // recoverMissedAlarm must return null so the background can reschedule
+    // recoverMissedAlarm must return [] so the background can reschedule
     // the existing alarm rather than treating it as a missed/expired one.
     const state = {
       phase: 'WORKING' as const,
@@ -23,7 +23,7 @@ describe('recoverMissedAlarm — timer still active (endTime in the future)', ()
 
     const result = recoverMissedAlarm(state, DEFAULT_CONFIG, NOW);
 
-    expect(result).toBeNull();
+    expect(result).toHaveLength(0);
   });
 
   it('isActivePhase is true for WORKING so background can reschedule', () => {
@@ -45,7 +45,7 @@ describe('recoverMissedAlarm — timer still active (endTime in the future)', ()
 });
 
 describe('recoverMissedAlarm — timer already expired', () => {
-  it('returns a new state when WORKING timer expired before now', () => {
+  it('returns steps when WORKING timer expired before now', () => {
     // Simulates a missed alarm: extension was dormant longer than the session.
     const state = {
       phase: 'WORKING' as const,
@@ -59,13 +59,14 @@ describe('recoverMissedAlarm — timer already expired', () => {
 
     const result = recoverMissedAlarm(state, DEFAULT_CONFIG, NOW);
 
-    expect(result).not.toBeNull();
+    expect(result.length).toBeGreaterThan(0);
     // After a WORKING session completes (cyclePosition < 3) → SHORT_BREAK
-    expect(result!.phase).toBe('SHORT_BREAK');
-    expect(result!.completedToday).toBe(1);
+    const finalState = result[result.length - 1].after;
+    expect(finalState.phase).toBe('SHORT_BREAK');
+    expect(finalState.completedToday).toBe(1);
   });
 
-  it('returns null for IDLE state (nothing to recover)', () => {
+  it('returns empty array for IDLE state (nothing to recover)', () => {
     const state = {
       phase: 'IDLE' as const,
       startTime: null,
@@ -78,7 +79,7 @@ describe('recoverMissedAlarm — timer already expired', () => {
 
     const result = recoverMissedAlarm(state, DEFAULT_CONFIG, NOW);
 
-    expect(result).toBeNull();
+    expect(result).toHaveLength(0);
   });
 });
 
@@ -98,8 +99,8 @@ describe('reschedule-on-update invariant', () => {
       completedToday: 0,
     };
 
-    // recoverMissedAlarm returns null (timer still running)
-    expect(recoverMissedAlarm(state, DEFAULT_CONFIG, NOW)).toBeNull();
+    // recoverMissedAlarm returns [] (timer still running)
+    expect(recoverMissedAlarm(state, DEFAULT_CONFIG, NOW)).toHaveLength(0);
 
     // background should detect active phase + future endTime and reschedule
     const shouldReschedule = isActivePhase(state.phase) && state.endTime !== null && state.endTime > NOW;
