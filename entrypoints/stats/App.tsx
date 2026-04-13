@@ -52,21 +52,13 @@ const isValidDateString = (s: string): boolean => {
 };
 
 export default function App() {
-  // #382: refetch trigger — incremented whenever chrome.storage.local changes
+  // #382: refetch trigger — incremented whenever storage.local changes
   const [refetchTick, setRefetchTick] = createSignal(0);
 
   onMount(() => {
-    if (typeof chrome !== 'undefined' && chrome.storage?.local?.onChanged) {
-      const handler = () => setRefetchTick((t) => t + 1);
-      chrome.storage.local.onChanged.addListener(handler);
-      onCleanup(() => chrome.storage.local.onChanged.removeListener(handler));
-    } else if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-      const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-        if (area === 'local') setRefetchTick((t) => t + 1);
-      };
-      chrome.storage.onChanged.addListener(handler);
-      onCleanup(() => chrome.storage.onChanged.removeListener(handler));
-    }
+    const handler = () => setRefetchTick((t) => t + 1);
+    browser.storage.local.onChanged.addListener(handler);
+    onCleanup(() => browser.storage.local.onChanged.removeListener(handler));
   });
 
   // Pass refetchTick as a source so createResource re-fetches on storage changes
