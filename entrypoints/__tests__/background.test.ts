@@ -10,6 +10,7 @@ import {
   getTimerState,
   setCurrentLabel,
   setTimerState,
+  toDateKey,
 } from '@/lib/storage';
 import { DEFAULT_CONFIG, INITIAL_STATE, type TimerConfig, type TimerState } from '@/lib/types';
 
@@ -29,11 +30,13 @@ const createConfig = (overrides: Partial<TimerConfig> = {}): TimerConfig => ({
   ...overrides,
 });
 
+let testId = 0;
+
 const initBackground = async (): Promise<void> => {
   (globalThis as typeof globalThis & { defineBackground: (main?: () => void | Promise<void>) => { main?: () => void | Promise<void> } }).defineBackground =
     (main) => ({ main });
 
-  const background = (await import(`../background?test=${Math.random()}`)) as BackgroundModule;
+  const background = (await import(`../background?test=${testId++}`)) as BackgroundModule;
   await background.default.main?.();
 };
 
@@ -42,6 +45,11 @@ describe('background service worker', () => {
     vi.restoreAllMocks();
     fakeBrowser.reset();
     await fakeBrowser.storage.local.clear();
+
+    // fakeBrowser.runtime.sendMessage passes an empty sender object (sender.id = undefined).
+    // The background's onMessage guard rejects messages where sender.id !== runtime.id, so
+    // clear runtime.id to match the empty sender so test messages are accepted (#236).
+    (fakeBrowser.runtime as unknown as { id: string | undefined }).id = undefined;
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
@@ -131,7 +139,7 @@ describe('background service worker', () => {
         label: 'Focus block',
         startTime: 1_000,
         endTime: 5_000,
-        date: '1970-01-01',
+        date: toDateKey(1_000),
         duration: 3_000,
       },
     ]);
@@ -216,7 +224,7 @@ describe('background service worker', () => {
         label: 'Recovered work',
         startTime: 1_000,
         endTime: 10_000,
-        date: '1970-01-01',
+        date: toDateKey(1_000),
         duration: 1_000,
       },
     ]);
@@ -238,6 +246,37 @@ describe('background service worker', () => {
     await initBackground();
 
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
+  });
+
+  it('clamps workDuration: 0 to at least 1000ms in UPDATE_CONFIG, preventing an infinite alarm loop', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    const zeroConfig = createConfig({ workDuration: 0, shortBreakDuration: 0, longBreakDuration: 0 });
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 5_000,
+        endTime: 15_000,
+        duration: 10_000,
+      }),
+    );
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: zeroConfig });
+
+    // All durations must be clamped to at least 1000ms in the persisted config.
+    const savedConfig = await getConfig();
+    expect(savedConfig.workDuration).toBeGreaterThanOrEqual(1_000);
+    expect(savedConfig.shortBreakDuration).toBeGreaterThanOrEqual(1_000);
+    expect(savedConfig.longBreakDuration).toBeGreaterThanOrEqual(1_000);
+
+    // endTime must not equal startTime (5_000), which is already in the past at now=10_000.
+    // A zero-duration would produce endTime = 5_000 + 0 = 5_000 ≤ now, scheduling an alarm
+    // at or before the current time and immediately re-triggering it (infinite loop, #237).
+    const endTime = (response as { endTime: number }).endTime;
+    expect(endTime).toBeGreaterThan(10_000);
+
+    const alarm = await fakeBrowser.alarms.get('tomate-timer');
+    expect(alarm?.scheduledTime).toBeGreaterThan(10_000);
   });
 
   it('updates config during an active timer and recreates the timer alarm', async () => {
