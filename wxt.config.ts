@@ -14,5 +14,16 @@ export default defineConfig({
         '128': '/icons/icon-128.png',
       },
     },
+    // Allow scripts to load audio assets at runtime via browser.runtime.getURL (#109)
+    web_accessible_resources: [
+      {
+        resources: ['/sounds/*', '/icons/*'],
+        matches: ['<all_urls>'],
+      },
+    ],
+    // Explicit CSP: permit canvas-confetti and audio playback (#110)
+    content_security_policy: {
+      extension_pages: "script-src 'self'; object-src 'self'; media-src 'self' blob:;",
+    },
   },
 });
