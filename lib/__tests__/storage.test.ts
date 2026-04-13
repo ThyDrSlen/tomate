@@ -163,7 +163,7 @@ describe('storage helpers', () => {
     });
     let callCount = 0;
     const realSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
-    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items: Record<string, unknown>) => {
       if (callCount === 0) {
         callCount++;
         throw quotaError;
@@ -190,7 +190,7 @@ describe('storage helpers', () => {
     });
     let firstCall = true;
     const realSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
-    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items: Record<string, unknown>) => {
       if (firstCall) {
         firstCall = false;
         throw quotaError;
