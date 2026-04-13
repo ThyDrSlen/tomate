@@ -22,16 +22,29 @@ const CONFETTI_CONFIGS: Record<string, confetti.Options> = {
   },
 };
 
+let currentAudio: HTMLAudioElement | null = null;
+
 export const playCelebration = (type: 'work' | 'milestone' | 'break', playSound = true): void => {
   confetti(CONFETTI_CONFIGS[type]);
 
   if (playSound) {
     try {
-      new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html'))
-        .play()
-        .catch(() => {});
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+        currentAudio = null;
+      }
+      const audio = new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html'));
+      currentAudio = audio;
+      audio.onended = () => {
+        currentAudio = null;
+      };
+      audio.play().catch(() => {
+        currentAudio = null;
+      });
     } catch {
       // Audio constructor can throw in non-browser environments
+      currentAudio = null;
     }
   }
 };
