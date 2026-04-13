@@ -17,6 +17,8 @@ export type TimerState = {
   sessionCount: number;
   cyclePosition: number;
   completedToday: number;
+  /** ISO date key (YYYY-MM-DD) of the last day completedToday was incremented; used to reset the counter at midnight. */
+  lastWorkDate: string;
 };
 
 export type CompletedSession = {
@@ -45,4 +47,5 @@ export const INITIAL_STATE: TimerState = {
   sessionCount: 0,
   cyclePosition: 0,
   completedToday: 0,
+  lastWorkDate: '',
 };

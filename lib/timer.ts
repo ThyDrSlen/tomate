@@ -2,12 +2,21 @@ import { INITIAL_STATE, type TimerConfig, type TimerPhase, type TimerState } fro
 
 const getNow = (now?: number): number => now ?? Date.now();
 
+const toLocalDateKey = (timestamp: number): string => {
+  const d = new Date(timestamp);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 const toIdleState = (state: TimerState): TimerState => ({
   ...state,
   ...INITIAL_STATE,
   sessionCount: state.sessionCount,
   cyclePosition: state.cyclePosition,
   completedToday: state.completedToday,
+  lastWorkDate: state.lastWorkDate,
 });
 
 const getPhaseDuration = (phase: TimerPhase, config: TimerConfig): number | null => {
@@ -47,10 +56,14 @@ export const completeTimer = (state: TimerState, config: TimerConfig, now?: numb
 
   switch (state.phase) {
     case 'WORKING': {
+      const todayKey = toLocalDateKey(currentTime);
+      // Reset completedToday if we've crossed midnight since the last session.
+      const prevCount = state.lastWorkDate === todayKey ? state.completedToday : 0;
       const completedState = {
         ...state,
         sessionCount: state.sessionCount + 1,
-        completedToday: state.completedToday + 1,
+        completedToday: prevCount + 1,
+        lastWorkDate: todayKey,
       };
 
       if (state.cyclePosition === 3) {
