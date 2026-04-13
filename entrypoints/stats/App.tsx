@@ -29,10 +29,18 @@ function StatCard(props: StatCardProps) {
   );
 }
 
+function sanitizeCsvCell(value: string): string {
+  if (/^[=+\-@]/.test(value)) {
+    return `'${value}`;
+  }
+  return value;
+}
+
 function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
   const header = 'startTime,endTime,duration,label';
   const rows = sessions.map((s) => {
-    const label = `"${s.label.replace(/"/g, '""')}"`;
+    const safeLabel = sanitizeCsvCell(s.label);
+    const label = `"${safeLabel.replace(/"/g, '""')}"`;
     return `${s.startTime},${s.endTime},${s.duration},${label}`;
   });
   const csv = [header, ...rows].join('\n');
