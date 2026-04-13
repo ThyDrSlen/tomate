@@ -1,5 +1,7 @@
 import { For, createMemo } from 'solid-js';
 
+import { toDateKey } from '@/lib/storage';
+
 type HeatmapProps = {
   data: Record<string, number>;
   days: number;
@@ -35,13 +37,6 @@ const getIntensityColor = (count: number): string => {
   return INTENSITY_COLORS[4];
 };
 
-const toDateKey = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
 const generateHeatmapGrid = (
   data: Record<string, number>,
   days: number,
@@ -53,7 +48,7 @@ const generateHeatmapGrid = (
   for (let i = days - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
-    const key = toDateKey(date);
+    const key = toDateKey(date.getTime());
     cells.push({
       date: key,
       count: data[key] ?? 0,

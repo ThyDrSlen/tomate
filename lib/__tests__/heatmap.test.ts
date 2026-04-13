@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { toDateKey } from '../storage';
+
 // We test the pure heatmap utilities without importing the SolidJS component.
 // The logic we need is inlined here to mirror the implementation.
 
@@ -21,13 +23,6 @@ const getIntensityColor = (count: number): string => {
   return INTENSITY_COLORS[4];
 };
 
-const toDateKey = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
 const MIN_DISPLAY_DAYS = 12 * 7;
 
 const generateHeatmapGrid = (data: Record<string, number>, days: number): HeatmapCell[] => {
@@ -38,7 +33,7 @@ const generateHeatmapGrid = (data: Record<string, number>, days: number): Heatma
   for (let i = effectiveDays - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
-    const key = toDateKey(date);
+    const key = toDateKey(date.getTime());
     cells.push({ date: key, count: data[key] ?? 0, dayOfWeek: date.getDay() });
   }
   return cells;
@@ -102,7 +97,7 @@ describe('generateHeatmapGrid — minimum display days (#104)', () => {
   it('fills count from data keyed by date string', () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const key = toDateKey(today);
+    const key = toDateKey(today.getTime());
     const cells = generateHeatmapGrid({ [key]: 3 }, MIN_DISPLAY_DAYS);
     const todayCell = cells.find((c) => c.date === key);
     expect(todayCell?.count).toBe(3);
@@ -116,10 +111,10 @@ describe('generateHeatmapGrid — minimum display days (#104)', () => {
 
 describe('toDateKey', () => {
   it('formats a date as YYYY-MM-DD', () => {
-    expect(toDateKey(new Date(2026, 3, 5))).toBe('2026-04-05');
+    expect(toDateKey(new Date(2026, 3, 5).getTime())).toBe('2026-04-05');
   });
 
   it('pads single-digit month and day', () => {
-    expect(toDateKey(new Date(2026, 0, 1))).toBe('2026-01-01');
+    expect(toDateKey(new Date(2026, 0, 1).getTime())).toBe('2026-01-01');
   });
 });
