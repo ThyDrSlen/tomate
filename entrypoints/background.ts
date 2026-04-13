@@ -1,4 +1,4 @@
-import { browser } from 'wxt/browser';
+import { browser, type Browser } from 'wxt/browser';
 
 import {
   abandonTimer,
@@ -237,9 +237,16 @@ export default defineBackground(() => {
     await recoverFromMissedAlarm();
   });
 
-  browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+  browser.runtime.onMessage.addListener((message, sender) => {
+    if (sender.id !== undefined && sender.id !== browser.runtime.id) {
+      return false;
+    }
+    return handleMessage(message as MessageAction);
+  });
 
-  browser.alarms.onAlarm.addListener(async (alarm) => {
+  let alarmHandling = false;
+
+  const handleAlarm = async (alarm: Browser.alarms.Alarm): Promise<void> => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
       await refreshBadge();
       return;
@@ -291,5 +298,15 @@ export default defineBackground(() => {
     }
 
     await refreshBadge();
+  };
+
+  browser.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarmHandling) return;
+    alarmHandling = true;
+    try {
+      await handleAlarm(alarm);
+    } finally {
+      alarmHandling = false;
+    }
   });
 });

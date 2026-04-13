@@ -273,4 +273,60 @@ describe('background service worker', () => {
       }),
     );
   });
+
+  it('rejects a message from a foreign extension sender and does not alter timer state', async () => {
+    await setTimerState(createState({ phase: 'IDLE' }));
+    await initBackground();
+
+    // Trigger onMessage directly with a sender whose id does not match browser.runtime.id.
+    const foreignSender = { id: 'foreign-extension-id' };
+    const results = await (fakeBrowser.runtime.onMessage as unknown as {
+      trigger: (msg: unknown, sender: unknown) => Promise<unknown[]>;
+    }).trigger({ action: 'START_TIMER' }, foreignSender);
+
+    // The listener must have returned false (rejecting the message).
+    expect(results).toContain(false);
+    // Timer state must remain IDLE — the message was not processed.
+    await expect(getTimerState()).resolves.toEqual(createState({ phase: 'IDLE' }));
+  });
+
+  it('processes a message from the same extension and advances timer state', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    await setTimerState(createState({ phase: 'IDLE' }));
+    await initBackground();
+
+    // Trigger onMessage with a sender whose id matches browser.runtime.id.
+    const ownSender = { id: fakeBrowser.runtime.id };
+    await (fakeBrowser.runtime.onMessage as unknown as {
+      trigger: (msg: unknown, sender: unknown) => Promise<unknown[]>;
+    }).trigger({ action: 'START_TIMER' }, ownSender);
+
+    // Timer must have transitioned to WORKING.
+    const state = await getTimerState();
+    expect(state.phase).toBe('WORKING');
+  });
+
+  it('deduplicates concurrent onAlarm calls — only one alarm handler runs at a time', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    await initBackground();
+
+    // Fire two alarm events without awaiting between them.  The second call must
+    // be dropped by the alarmHandling guard because the first has not finished.
+    const alarmEvent = { name: 'tomate-timer', scheduledTime: 4_000 };
+    const p1 = fakeBrowser.alarms.onAlarm.trigger(alarmEvent);
+    const p2 = fakeBrowser.alarms.onAlarm.trigger(alarmEvent);
+    await Promise.all([p1, p2]);
+
+    // Only one session should have been recorded.
+    const history = await getSessionHistory();
+    expect(history).toHaveLength(1);
+  });
 });
