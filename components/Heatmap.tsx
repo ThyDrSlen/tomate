@@ -189,7 +189,7 @@ export default function Heatmap(props: HeatmapProps) {
                 {(cell) =>
                   cell ? (
                     <div
-                      class="rounded-sm"
+                      class={`rounded-sm${cell.count === 0 ? ' ring-1 ring-gray-200 dark:ring-gray-700' : ''}`}
                       style={{
                         width: `${cellSize()}px`,
                         height: `${cellSize()}px`,
