@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 // We test the pure heatmap utilities without importing the SolidJS component.
-// The logic we need is inlined here to mirror the implementation.
+// The logic is inlined here to mirror the implementation in components/Heatmap.tsx.
 
 type HeatmapCell = { date: string; count: number; dayOfWeek: number };
 
@@ -28,20 +28,23 @@ const toDateKey = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
-const MIN_DISPLAY_DAYS = 12 * 7;
-
 const generateHeatmapGrid = (data: Record<string, number>, days: number): HeatmapCell[] => {
   const cells: HeatmapCell[] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const effectiveDays = Math.max(days, MIN_DISPLAY_DAYS);
-  for (let i = effectiveDays - 1; i >= 0; i--) {
+  for (let i = days - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     const key = toDateKey(date);
     cells.push({ date: key, count: data[key] ?? 0, dayOfWeek: date.getDay() });
   }
   return cells;
+};
+
+const tooltipText = (cell: HeatmapCell): string => {
+  const count = cell.count;
+  const label = count === 0 ? 'No tomates' : `${count} tomate${count !== 1 ? 's' : ''}`;
+  return `${label} on ${cell.date}`;
 };
 
 describe('getIntensityColor', () => {
@@ -78,39 +81,57 @@ describe('getIntensityColor', () => {
   });
 });
 
-describe('generateHeatmapGrid — minimum display days (#104)', () => {
-  it('generates at least 84 cells (12 weeks) even when days is 1', () => {
-    const cells = generateHeatmapGrid({}, 1);
-    expect(cells.length).toBeGreaterThanOrEqual(MIN_DISPLAY_DAYS);
+describe('generateHeatmapGrid — correct cell count (#106)', () => {
+  it('generates exactly `days` cells for the given window', () => {
+    expect(generateHeatmapGrid({}, 84).length).toBe(84);
   });
 
-  it('generates at least 84 cells when days is 7', () => {
-    const cells = generateHeatmapGrid({}, 7);
-    expect(cells.length).toBeGreaterThanOrEqual(MIN_DISPLAY_DAYS);
+  it('generates exactly 7 cells for a 7-day window', () => {
+    expect(generateHeatmapGrid({}, 7).length).toBe(7);
   });
 
-  it('honours a larger days value and generates more than 84 cells', () => {
-    const cells = generateHeatmapGrid({}, 365);
-    expect(cells.length).toBe(365);
-  });
-
-  it('returns 84 cells when days is exactly 84', () => {
-    const cells = generateHeatmapGrid({}, 84);
-    expect(cells.length).toBe(84);
+  it('generates exactly 365 cells for a full-year window', () => {
+    expect(generateHeatmapGrid({}, 365).length).toBe(365);
   });
 
   it('fills count from data keyed by date string', () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const key = toDateKey(today);
-    const cells = generateHeatmapGrid({ [key]: 3 }, MIN_DISPLAY_DAYS);
+    const cells = generateHeatmapGrid({ [key]: 3 }, 84);
     const todayCell = cells.find((c) => c.date === key);
     expect(todayCell?.count).toBe(3);
   });
 
-  it('defaults count to 0 for dates not in data', () => {
-    const cells = generateHeatmapGrid({}, MIN_DISPLAY_DAYS);
+  it('defaults count to 0 for dates not in data (empty sessions renders all zero-count cells)', () => {
+    const cells = generateHeatmapGrid({}, 84);
     expect(cells.every((c) => c.count === 0)).toBe(true);
+  });
+
+  it('a day with multiple sessions shows the correct count', () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const key = toDateKey(today);
+    const cells = generateHeatmapGrid({ [key]: 5 }, 28);
+    const todayCell = cells.find((c) => c.date === key);
+    expect(todayCell?.count).toBe(5);
+  });
+});
+
+describe('tooltipText — title attribute content (#106)', () => {
+  it('shows "No tomates" for count 0', () => {
+    const cell: HeatmapCell = { date: '2026-04-12', count: 0, dayOfWeek: 0 };
+    expect(tooltipText(cell)).toBe('No tomates on 2026-04-12');
+  });
+
+  it('shows singular "tomate" for count 1', () => {
+    const cell: HeatmapCell = { date: '2026-04-12', count: 1, dayOfWeek: 0 };
+    expect(tooltipText(cell)).toBe('1 tomate on 2026-04-12');
+  });
+
+  it('shows plural "tomates" for count > 1', () => {
+    const cell: HeatmapCell = { date: '2026-04-12', count: 3, dayOfWeek: 0 };
+    expect(tooltipText(cell)).toBe('3 tomates on 2026-04-12');
   });
 });
 
