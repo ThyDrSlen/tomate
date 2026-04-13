@@ -47,7 +47,7 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
 
 export default function App() {
   const [yearData] = createResource(() => getHeatmapData(365));
-  const [sessions] = createResource(() => getSessionHistory());
+  const [sessions, { refetch: refetchSessions }] = createResource(() => getSessionHistory());
   const [todayCount] = createResource(() => getTodayCount());
   const [config] = createResource(() => getConfig());
 
@@ -58,6 +58,8 @@ export default function App() {
   const week = () => computeWeekCount(sessions() ?? []);
   const bestDay = () => computeBestDay(sessions() ?? []);
   const streak = () => computeStreak(sessions() ?? []);
+
+  const loadError = () => sessions.error ?? yearData.error ?? todayCount.error ?? config.error;
 
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
@@ -74,14 +76,31 @@ export default function App() {
           </Show>
         </div>
 
-        <Show when={(sessions() ?? []).length === 0}>
+        <Show when={loadError()}>
+          <div
+            role="alert"
+            class="text-center py-8 text-red-700 bg-red-100 rounded-xl border border-red-200 px-4"
+          >
+            <p class="text-lg font-semibold">Could not load stats</p>
+            <p class="text-sm mt-1">{String(loadError())}</p>
+            <button
+              type="button"
+              onClick={() => refetchSessions()}
+              class="mt-3 text-sm px-4 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-200 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </Show>
+
+        <Show when={!loadError() && (sessions() ?? []).length === 0}>
           <div class="text-center py-8 text-gray-500 dark:text-gray-400">
             <p class="text-lg">No sessions yet</p>
             <p class="text-sm mt-1">Complete your first Pomodoro to see your stats here.</p>
           </div>
         </Show>
 
-        <Show when={(sessions() ?? []).length > 0}>
+        <Show when={!loadError() && (sessions() ?? []).length > 0}>
           <div class="grid grid-cols-5 gap-3 mb-6">
             <StatCard label="Total tomates" value={total()} />
             <StatCard label="Today" value={todayCount() ?? 0} />
