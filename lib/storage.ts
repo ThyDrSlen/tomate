@@ -56,7 +56,8 @@ export const setConfig = async (config: TimerConfig): Promise<void> => {
 
 export const addCompletedSession = async (session: CompletedSession): Promise<void> => {
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
-  await browser.storage.local.set({ [KEYS.SESSIONS]: [...sessions, session] });
+  sessions.push(session);
+  await browser.storage.local.set({ [KEYS.SESSIONS]: sessions });
 };
 
 export const getSessionHistory = async (days?: number): Promise<CompletedSession[]> => {
