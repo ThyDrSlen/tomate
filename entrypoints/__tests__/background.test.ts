@@ -243,6 +243,31 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
+  it('reschedules the alarm when onInstalled fires with reason update and a timer is active', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
+
+    // The missed alarm is recovered: working session completes, SHORT_BREAK is scheduled
+    const state = await getTimerState();
+    expect(state.phase).toBe('SHORT_BREAK');
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
+      expect.objectContaining({
+        scheduledTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
+      }),
+    );
+    await expect(getPendingCelebration()).resolves.toBe(true);
+  });
+
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });
