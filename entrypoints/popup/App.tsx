@@ -100,6 +100,7 @@ export default function App() {
   };
 
   let labelTimeout: ReturnType<typeof setTimeout>;
+  onCleanup(() => clearTimeout(labelTimeout));
   const handleLabelChange = (value: string) => {
     setLabel(value);
     clearTimeout(labelTimeout);
