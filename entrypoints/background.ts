@@ -286,7 +286,7 @@ export default defineBackground(() => {
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
       if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
-        const i18n = (key: string): string => { try { return browser.i18n.getMessage(key); } catch { return ''; } };
+        const i18n = (key: string): string => { try { return browser.i18n.getMessage(key as any); } catch { return ''; } };
         await browser.notifications.create({
           type: 'basic',
           iconUrl: browser.runtime.getURL('/icons/icon-128.png'),

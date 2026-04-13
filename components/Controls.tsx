@@ -4,7 +4,7 @@ import type { TimerPhase } from '@/lib/types';
 
 const t = (key: string, fallback: string): string => {
   try {
-    return browser.i18n.getMessage(key) || fallback;
+    return browser.i18n.getMessage(key as any) || fallback;
   } catch {
     return fallback;
   }
