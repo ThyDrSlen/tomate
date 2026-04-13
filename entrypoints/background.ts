@@ -60,7 +60,7 @@ export default defineBackground(() => {
         break;
       }
       case 'BREAK_SUGGESTION': {
-        text = `${todayCount}✓`;
+        text = `${await getTodayCount()}✓`;
         color = BADGE_GOLD;
         break;
       }
