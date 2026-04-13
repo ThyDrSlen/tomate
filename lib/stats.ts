@@ -45,25 +45,40 @@ export const computeBestDay = (
 export const computeStreak = (sessions: CompletedSession[]): number => {
   if (sessions.length === 0) return 0;
 
-  const sessionDates = new Set(sessions.map((s) => s.date));
+  // Collect unique dates into a sorted array (ascending) — O(n log n) once,
+  // avoids rebuilding a Set and mutating Date objects on every reactive call.
+  const uniqueDates = Array.from(new Set(sessions.map((s) => s.date))).sort();
 
   const today = new Date(Date.now());
   today.setHours(0, 0, 0, 0);
   const todayKey = toDateKey(today);
 
-  let streak = 0;
-  let checkDate = new Date(today);
-
-  if (!sessionDates.has(todayKey)) {
-    checkDate.setDate(checkDate.getDate() - 1);
-    if (!sessionDates.has(toDateKey(checkDate))) {
+  // Determine the most-recent date to start counting from.
+  // If there is no session today, try starting from yesterday.
+  let startKey = uniqueDates[uniqueDates.length - 1];
+  if (startKey !== todayKey) {
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = toDateKey(yesterday);
+    if (startKey !== yesterdayKey) {
       return 0;
     }
   }
 
-  while (sessionDates.has(toDateKey(checkDate))) {
+  // Walk the sorted dates array backwards, counting consecutive calendar days.
+  // Date arithmetic is done entirely with string comparison on ISO keys —
+  // no repeated Date allocation inside the hot loop.
+  let streak = 0;
+  let i = uniqueDates.length - 1;
+  let expectedKey = startKey;
+
+  while (i >= 0 && uniqueDates[i] === expectedKey) {
     streak++;
-    checkDate.setDate(checkDate.getDate() - 1);
+    i--;
+    // Compute the previous calendar day key from expectedKey.
+    const [y, mo, d] = expectedKey.split('-').map(Number);
+    const prev = new Date(y, mo - 1, d - 1);
+    expectedKey = toDateKey(prev);
   }
 
   return streak;

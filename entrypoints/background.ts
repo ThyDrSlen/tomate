@@ -22,7 +22,7 @@ import {
   setTimerState,
   toDateKey,
 } from '@/lib/storage';
-import type { CompletedSession, TimerConfig } from '@/lib/types';
+import { DEFAULT_CONFIG, INITIAL_STATE, type CompletedSession, type TimerConfig } from '@/lib/types';
 
 export type MessageAction =
   | { action: 'START_TIMER' }
@@ -39,6 +39,14 @@ export default defineBackground(() => {
   const BADGE_GREEN = '#16A34A';
   const BADGE_GOLD = '#CA8A04';
   const badgeApi = browser.action;
+
+  // Cached config — only changes when UPDATE_CONFIG is received, so we avoid
+  // redundant storage reads in the hot ALARM_TIMER / ALARM_BADGE_REFRESH paths.
+  let cachedConfig: TimerConfig = DEFAULT_CONFIG;
+  const loadConfig = async (): Promise<TimerConfig> => {
+    cachedConfig = await getConfig();
+    return cachedConfig;
+  };
 
   const refreshBadge = async (): Promise<void> => {
     const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
@@ -117,10 +125,16 @@ export default defineBackground(() => {
   };
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    const [state, config] = await Promise.all([getTimerState(), loadConfig()]);
     const recovered = recoverMissedAlarm(state, config);
 
     if (!recovered) {
+      // No missed alarm — but if a timer is actively running, Chrome may have
+      // cleared its alarm during an update/restart, so reschedule it (#142).
+      if (isActivePhase(state.phase) && state.endTime !== null) {
+        await scheduleTimerAlarm(state.endTime);
+        await startBadgeRefresh();
+      }
       await refreshBadge();
       return;
     }
@@ -142,7 +156,8 @@ export default defineBackground(() => {
   };
 
   const handleMessage = async (message: MessageAction) => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    // Config is cached; re-fetch only when needed (UPDATE_CONFIG updates it below).
+    const [state, config] = await Promise.all([getTimerState(), Promise.resolve(cachedConfig)]);
 
     switch (message.action) {
       case 'START_TIMER': {
@@ -187,6 +202,7 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
+        cachedConfig = message.config;
         await setConfig(message.config);
         const nextState = adjustDuration(state, message.config);
         await setTimerState(nextState);
@@ -208,8 +224,21 @@ export default defineBackground(() => {
   };
 
   browser.runtime.onInstalled.addListener(async (details) => {
-    // On fresh install or update, remove any stale dynamic declarativeNetRequest rules (#103)
-    if (details.reason === 'install' || details.reason === 'update') {
+    if (details.reason === 'install') {
+      // Fresh install: seed storage with defaults only if nothing is stored yet,
+      // then warm the config cache and paint the initial badge.
+      const [storedState, storedConfig] = await Promise.all([getTimerState(), getConfig()]);
+      if (storedState.phase === 'IDLE' && storedState.sessionCount === 0) {
+        await setTimerState(INITIAL_STATE);
+      }
+      cachedConfig = storedConfig;
+      await refreshBadge();
+      return;
+    }
+
+    if (details.reason === 'update') {
+      // Extension update: clear stale declarativeNetRequest rules (#103), then
+      // reschedule any alarms that were running before the update.
       try {
         const existing = await (browser as typeof browser & {
           declarativeNetRequest?: {
@@ -229,8 +258,11 @@ export default defineBackground(() => {
       } catch {
         // declarativeNetRequest may not be available if permission not declared
       }
+      await recoverFromMissedAlarm();
+      return;
     }
-    await recoverFromMissedAlarm();
+
+    // 'browser_update' and any other reasons — no action needed.
   });
 
   browser.runtime.onStartup.addListener(async () => {
@@ -249,7 +281,8 @@ export default defineBackground(() => {
       return;
     }
 
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    // Use cached config — config doesn't change during a running session (#170).
+    const [state, config] = await Promise.all([getTimerState(), Promise.resolve(cachedConfig)]);
     const completed = completeTimer(state, config);
     await setTimerState(completed);
 

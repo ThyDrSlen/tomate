@@ -200,7 +200,8 @@ describe('background service worker', () => {
     );
     await initBackground();
 
-    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
+    // An extension update may have interrupted a running session; 'install' never has prior state.
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
 
     await expect(getTimerState()).resolves.toEqual(
       createState({
