@@ -184,30 +184,39 @@ export default function Heatmap(props: HeatmapProps) {
           }}
         >
           <For each={columns()}>
-            {(col) => (
-              <For each={col}>
-                {(cell) =>
-                  cell ? (
-                    <div
-                      class="rounded-sm"
-                      style={{
-                        width: `${cellSize()}px`,
-                        height: `${cellSize()}px`,
-                        "background-color": getIntensityColor(cell.count),
-                      }}
-                      title={tooltipText(cell)}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: `${cellSize()}px`,
-                        height: `${cellSize()}px`,
-                      }}
-                    />
-                  )
-                }
-              </For>
-            )}
+            {(col) => {
+              const isJan1Col = () =>
+                col.some((cell) => cell !== null && cell.date.slice(5) === '01-01');
+              return (
+                <For each={col}>
+                  {(cell) =>
+                    cell ? (
+                      <div
+                        class="rounded-sm"
+                        style={{
+                          width: `${cellSize()}px`,
+                          height: `${cellSize()}px`,
+                          "background-color": getIntensityColor(cell.count),
+                          ...(isJan1Col() && cell === col.find((c) => c !== null)
+                            ? { "box-shadow": "-2px 0 0 0 #EF4444" }
+                            : {}),
+                        }}
+                        tabindex="0"
+                        aria-label={tooltipText(cell)}
+                        title={tooltipText(cell)}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: `${cellSize()}px`,
+                          height: `${cellSize()}px`,
+                        }}
+                      />
+                    )
+                  }
+                </For>
+              );
+            }}
           </For>
         </div>
       </div>
