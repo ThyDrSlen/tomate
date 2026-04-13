@@ -7,6 +7,7 @@ type ControlsProps = {
   onAbandon: () => void;
   onAcceptLongBreak: () => void;
   onSkipLongBreak: () => void;
+  primaryButtonRef?: (el: HTMLButtonElement) => void;
 };
 
 export default function Controls(props: ControlsProps) {
@@ -15,6 +16,7 @@ export default function Controls(props: ControlsProps) {
       <Switch>
         <Match when={props.phase === 'IDLE'}>
           <button
+            ref={props.primaryButtonRef}
             type="button"
             onClick={props.onStart}
             class="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 active:bg-red-800 transition-colors"
@@ -24,6 +26,7 @@ export default function Controls(props: ControlsProps) {
         </Match>
         <Match when={props.phase === 'WORKING'}>
           <button
+            ref={props.primaryButtonRef}
             type="button"
             onClick={props.onAbandon}
             class="px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
@@ -33,6 +36,7 @@ export default function Controls(props: ControlsProps) {
         </Match>
         <Match when={props.phase === 'SHORT_BREAK' || props.phase === 'LONG_BREAK'}>
           <button
+            ref={props.primaryButtonRef}
             type="button"
             onClick={props.onAbandon}
             class="px-6 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
@@ -42,6 +46,7 @@ export default function Controls(props: ControlsProps) {
         </Match>
         <Match when={props.phase === 'BREAK_SUGGESTION'}>
           <button
+            ref={props.primaryButtonRef}
             type="button"
             onClick={props.onAcceptLongBreak}
             class="px-5 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors"
