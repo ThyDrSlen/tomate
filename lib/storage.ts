@@ -58,6 +58,8 @@ const validateConfig = (raw: unknown): TimerConfig => {
     shortBreakDuration: toPositiveNumber(r.shortBreakDuration, DEFAULT_CONFIG.shortBreakDuration),
     longBreakDuration: toPositiveNumber(r.longBreakDuration, DEFAULT_CONFIG.longBreakDuration),
     openBreakTab: typeof r.openBreakTab === 'boolean' ? r.openBreakTab : DEFAULT_CONFIG.openBreakTab,
+    playCompletionSound: typeof r.playCompletionSound === 'boolean' ? r.playCompletionSound : DEFAULT_CONFIG.playCompletionSound,
+    dailyGoal: typeof r.dailyGoal === 'number' && r.dailyGoal > 0 ? r.dailyGoal : DEFAULT_CONFIG.dailyGoal,
   };
 };
 
