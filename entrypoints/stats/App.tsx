@@ -29,10 +29,16 @@ function StatCard(props: StatCardProps) {
   );
 }
 
+function sanitizeCSVField(value: string): string {
+  // Prevent CSV injection: prefix formula-triggering characters with a tab
+  const sanitized = /^[=+\-@\t\r]/.test(value) ? `\t${value}` : value;
+  return `"${sanitized.replace(/"/g, '""')}"`;
+}
+
 function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
   const header = 'startTime,endTime,duration,label';
   const rows = sessions.map((s) => {
-    const label = `"${s.label.replace(/"/g, '""')}"`;
+    const label = sanitizeCSVField(s.label);
     return `${s.startTime},${s.endTime},${s.duration},${label}`;
   });
   const csv = [header, ...rows].join('\n');
@@ -42,7 +48,8 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
   a.href = url;
   a.download = `tomate-sessions-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
-  URL.revokeObjectURL(url);
+  // Delay revocation to ensure the browser has time to initiate the download (#282)
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export default function App() {
@@ -50,6 +57,16 @@ export default function App() {
   const [sessions] = createResource(() => getSessionHistory());
   const [todayCount] = createResource(() => getTodayCount());
   const [config] = createResource(() => getConfig());
+
+  // Surface resource errors so users see a message instead of silently empty data (#368)
+  const hasError = () => {
+    const err = sessions.error ?? yearData.error ?? todayCount.error ?? config.error;
+    if (err) {
+      console.error('[stats] Failed to load data:', err);
+      return true;
+    }
+    return false;
+  };
 
   const dailyGoal = () => config()?.dailyGoal ?? 8;
   const goalProgress = () => Math.min(100, Math.round(((todayCount() ?? 0) / dailyGoal()) * 100));
@@ -59,9 +76,19 @@ export default function App() {
   const bestDay = () => computeBestDay(sessions() ?? []);
   const streak = () => computeStreak(sessions() ?? []);
 
+  // Null-safe accessors for bestDay (#363)
+  const bestDayCount = () => bestDay()?.count ?? '—';
+  const bestDayDate = () => bestDay()?.date ?? undefined;
+
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
       <div class="max-w-[800px] mx-auto">
+        <Show when={hasError()}>
+          <div class="text-center py-8 text-red-500">
+            <p class="text-lg font-medium">Failed to load stats</p>
+            <p class="text-sm mt-1">Check the browser console for details and try refreshing.</p>
+          </div>
+        </Show>
         <div class="flex items-center justify-between mb-6">
           <h1 class="text-2xl font-bold text-red-600">Tomate Stats</h1>
           <Show when={(sessions() ?? []).length > 0}>
@@ -88,8 +115,8 @@ export default function App() {
             <StatCard label="This week" value={week()} />
             <StatCard
               label="Best day"
-              value={bestDay()?.count ?? '—'}
-              sublabel={bestDay()?.date}
+              value={bestDayCount()}
+              sublabel={bestDayDate()}
             />
             <StatCard
               label="Current streak"
