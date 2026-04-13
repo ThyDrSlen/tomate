@@ -141,6 +141,14 @@ describe('storage helpers', () => {
     await expect(getCurrentLabel()).resolves.toBe('x'.repeat(50));
   });
 
+  it('keeps labels that are exactly 50 characters without truncation', async () => {
+    const label = 'y'.repeat(50);
+
+    await setCurrentLabel(label);
+
+    await expect(getCurrentLabel()).resolves.toBe(label);
+  });
+
   it('roundtrips the pending celebration flag', async () => {
     await expect(getPendingCelebration()).resolves.toBe(false);
 
