@@ -34,19 +34,22 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    const [currentState, config, pending, currentLabel] = await Promise.all([
+      browser.runtime.sendMessage({ action: 'GET_STATE' }) as Promise<TimerState>,
+      getConfig(),
+      getPendingCelebration(),
+      getCurrentLabel(),
+    ]);
 
-    const config = await getConfig();
+    setState(currentState);
     setDailyGoal(config.dailyGoal);
+    setLabel(currentLabel);
 
-    const pending = await getPendingCelebration();
     if (pending) {
       playCelebration('work', config.playCompletionSound);
       await setPendingCelebration(false);
     }
 
-    setLabel(await getCurrentLabel());
     await refreshStats();
 
     browser.storage.onChanged.addListener(refreshStats);
