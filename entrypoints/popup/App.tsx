@@ -12,13 +12,29 @@ import {
   getTodayCount,
   getHeatmapData,
 } from '@/lib/storage';
-import { INITIAL_STATE, type TimerState } from '@/lib/types';
+import { INITIAL_STATE, type TimerState, type TimerPhase } from '@/lib/types';
 
 import TimerRing from '@/components/TimerRing';
 import Controls from '@/components/Controls';
 import TaskLabel from '@/components/TaskLabel';
 import TodayCount from '@/components/TodayCount';
 import Heatmap from '@/components/Heatmap';
+
+const VALID_PHASES = new Set<TimerPhase>([
+  'IDLE',
+  'WORKING',
+  'SHORT_BREAK',
+  'LONG_BREAK',
+  'BREAK_SUGGESTION',
+]);
+
+/** Runtime shape check — prevents crashes when the background responds with
+ *  undefined or a stale/partial object (e.g. on cold-start race conditions). */
+const isTimerState = (x: unknown): x is TimerState =>
+  typeof x === 'object' &&
+  x !== null &&
+  'phase' in x &&
+  VALID_PHASES.has((x as TimerState).phase);
 
 export default function App() {
   const [state, setState] = createSignal<TimerState>(INITIAL_STATE);
@@ -35,7 +51,7 @@ export default function App() {
 
   onMount(async () => {
     const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    if (isTimerState(currentState)) setState(currentState);
 
     const config = await getConfig();
     setDailyGoal(config.dailyGoal);
@@ -81,22 +97,22 @@ export default function App() {
 
   const startTimer = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'START_TIMER' });
-    setState(newState as TimerState);
+    if (isTimerState(newState)) setState(newState);
   };
 
   const abandonTimer = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'ABANDON_TIMER' });
-    setState(newState as TimerState);
+    if (isTimerState(newState)) setState(newState);
   };
 
   const acceptLongBreak = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
-    setState(newState as TimerState);
+    if (isTimerState(newState)) setState(newState);
   };
 
   const skipLongBreak = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
-    setState(newState as TimerState);
+    if (isTimerState(newState)) setState(newState);
   };
 
   let labelTimeout: ReturnType<typeof setTimeout>;
