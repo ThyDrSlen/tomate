@@ -2,7 +2,7 @@ import { createSignal, onMount, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { getConfig, setConfig } from '@/lib/storage';
-import { DEFAULT_CONFIG, type TimerConfig } from '@/lib/types';
+import { DEFAULT_CONFIG, MAX_BLOCKED_SITES, type TimerConfig } from '@/lib/types';
 
 const MS_PER_MINUTE = 60_000;
 
@@ -16,6 +16,7 @@ export default function App() {
   const [longBreak, setLongBreak] = createSignal(30);
   const [openBreakTab, setOpenBreakTab] = createSignal(true);
   const [playCompletionSound, setPlayCompletionSound] = createSignal(true);
+  const [blockedSites, setBlockedSites] = createSignal('');
   // Preserve fields not yet surfaced in UI (e.g. dailyGoal) so we don't wipe them on save
   const [extraConfig, setExtraConfig] = createSignal<Partial<TimerConfig>>({});
   const [saved, setSaved] = createSignal(false);
@@ -28,8 +29,9 @@ export default function App() {
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(config.openBreakTab !== false);
     setPlayCompletionSound(config.playCompletionSound !== false);
+    setBlockedSites((config.blockedSites ?? []).join('\n'));
     // Stash any extra fields so round-trip save doesn't lose them
-    const { workDuration: _w, shortBreakDuration: _s, longBreakDuration: _l, openBreakTab: _o, playCompletionSound: _p, ...rest } = config;
+    const { workDuration: _w, shortBreakDuration: _s, longBreakDuration: _l, openBreakTab: _o, playCompletionSound: _p, blockedSites: _b, ...rest } = config;
     setExtraConfig(rest);
   });
 
@@ -42,6 +44,11 @@ export default function App() {
       setError('Please check the duration values — work must be 1–120 min, short break 1–30 min, long break 5–60 min.');
       return;
     }
+    const parsedSites = blockedSites()
+      .split('\n')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, MAX_BLOCKED_SITES);
     const config: TimerConfig = {
       ...DEFAULT_CONFIG,
       ...extraConfig(),
@@ -50,6 +57,7 @@ export default function App() {
       longBreakDuration: longBreak() * MS_PER_MINUTE,
       openBreakTab: openBreakTab(),
       playCompletionSound: playCompletionSound(),
+      blockedSites: parsedSites,
     };
     try {
       await setConfig(config);
@@ -72,6 +80,7 @@ export default function App() {
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(DEFAULT_CONFIG.openBreakTab);
     setPlayCompletionSound(DEFAULT_CONFIG.playCompletionSound);
+    setBlockedSites(DEFAULT_CONFIG.blockedSites.join('\n'));
     setExtraConfig({ dailyGoal: DEFAULT_CONFIG.dailyGoal });
     setError('');
   };
@@ -136,6 +145,19 @@ export default function App() {
               class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
             />
             <span class="text-sm font-medium text-gray-700">Play completion sound</span>
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-gray-700">
+              Block sites during work sessions (one per line, max {MAX_BLOCKED_SITES})
+            </span>
+            <textarea
+              rows={4}
+              placeholder={'twitter.com\nyoutube.com'}
+              value={blockedSites()}
+              onInput={(e) => setBlockedSites(e.currentTarget.value)}
+              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
           </label>
         </div>
 

@@ -7,6 +7,8 @@ export type TimerConfig = {
   openBreakTab: boolean;
   playCompletionSound: boolean;
   dailyGoal: number;
+  /** Hostnames to block during WORKING sessions (e.g. "twitter.com"). Max 100 entries. */
+  blockedSites: string[];
 };
 
 export type TimerState = {
@@ -28,6 +30,9 @@ export type CompletedSession = {
   duration: number;
 };
 
+/** Maximum number of sites that can be blocked (enforced in the options UI). */
+export const MAX_BLOCKED_SITES = 100;
+
 export const DEFAULT_CONFIG: TimerConfig = {
   workDuration: 25 * 60 * 1000,
   shortBreakDuration: 5 * 60 * 1000,
@@ -35,6 +40,7 @@ export const DEFAULT_CONFIG: TimerConfig = {
   openBreakTab: true,
   playCompletionSound: true,
   dailyGoal: 8,
+  blockedSites: [],
 };
 
 export const INITIAL_STATE: TimerState = {
