@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from 'solid-js';
+import { createSignal, For, onMount, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { getConfig, setConfig } from '@/lib/storage';
@@ -10,12 +10,40 @@ const isValidWork = (v: number) => v >= 1 && v <= 120;
 const isValidShortBreak = (v: number) => v >= 1 && v <= 30;
 const isValidLongBreak = (v: number) => v >= 5 && v <= 60;
 
+/**
+ * Strip a protocol prefix (http:// or https://) from a raw hostname input.
+ * Returns the stripped value, or the original string if no protocol is present.
+ */
+export const stripProtocol = (value: string): string =>
+  value.replace(/^https?:\/\//i, '');
+
+/**
+ * Validate that a string is a well-formed plain hostname suitable for use in
+ * declarativeNetRequest rules.  Rules:
+ *  - No protocol prefix (http://, https://)
+ *  - No path separator (/)
+ *  - No query string (?)
+ *  - At least one dot (.)
+ *  - Only valid hostname characters: letters, digits, hyphens, dots
+ */
+export const isValidHostname = (value: string): boolean => {
+  if (!value) return false;
+  if (/^https?:\/\//i.test(value)) return false;
+  if (value.includes('/')) return false;
+  if (value.includes('?')) return false;
+  if (!value.includes('.')) return false;
+  return /^[a-zA-Z0-9.\-]+$/.test(value);
+};
+
 export default function App() {
   const [work, setWork] = createSignal(25);
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
   const [openBreakTab, setOpenBreakTab] = createSignal(true);
   const [playCompletionSound, setPlayCompletionSound] = createSignal(true);
+  const [blockedSites, setBlockedSites] = createSignal<string[]>([]);
+  const [hostnameInput, setHostnameInput] = createSignal('');
+  const [hostnameError, setHostnameError] = createSignal('');
   // Preserve fields not yet surfaced in UI (e.g. dailyGoal) so we don't wipe them on save
   const [extraConfig, setExtraConfig] = createSignal<Partial<TimerConfig>>({});
   const [saved, setSaved] = createSignal(false);
@@ -28,8 +56,9 @@ export default function App() {
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(config.openBreakTab !== false);
     setPlayCompletionSound(config.playCompletionSound !== false);
+    setBlockedSites(config.blockedSites ?? []);
     // Stash any extra fields so round-trip save doesn't lose them
-    const { workDuration: _w, shortBreakDuration: _s, longBreakDuration: _l, openBreakTab: _o, playCompletionSound: _p, ...rest } = config;
+    const { workDuration: _w, shortBreakDuration: _s, longBreakDuration: _l, openBreakTab: _o, playCompletionSound: _p, blockedSites: _b, ...rest } = config;
     setExtraConfig(rest);
   });
 
@@ -50,6 +79,7 @@ export default function App() {
       longBreakDuration: longBreak() * MS_PER_MINUTE,
       openBreakTab: openBreakTab(),
       playCompletionSound: playCompletionSound(),
+      blockedSites: blockedSites(),
     };
     try {
       await setConfig(config);
@@ -72,8 +102,46 @@ export default function App() {
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(DEFAULT_CONFIG.openBreakTab);
     setPlayCompletionSound(DEFAULT_CONFIG.playCompletionSound);
+    setBlockedSites(DEFAULT_CONFIG.blockedSites);
+    setHostnameInput('');
+    setHostnameError('');
     setExtraConfig({ dailyGoal: DEFAULT_CONFIG.dailyGoal });
     setError('');
+  };
+
+  const handleAddHostname = () => {
+    const raw = hostnameInput().trim();
+    if (!raw) return;
+
+    // Auto-strip protocol prefix
+    const stripped = stripProtocol(raw);
+
+    if (!isValidHostname(stripped)) {
+      setHostnameError(
+        'Invalid hostname. Enter a plain domain like "example.com" — no protocol, path, or query string.',
+      );
+      return;
+    }
+
+    if (blockedSites().includes(stripped)) {
+      setHostnameError(`"${stripped}" is already in the list.`);
+      return;
+    }
+
+    setBlockedSites([...blockedSites(), stripped]);
+    setHostnameInput('');
+    setHostnameError('');
+  };
+
+  const handleRemoveHostname = (hostname: string) => {
+    setBlockedSites(blockedSites().filter((h) => h !== hostname));
+  };
+
+  const handleHostnameKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddHostname();
+    }
   };
 
   return (
@@ -137,6 +205,60 @@ export default function App() {
             />
             <span class="text-sm font-medium text-gray-700">Play completion sound</span>
           </label>
+
+          <div class="block">
+            <span class="text-sm font-medium text-gray-700">Blocked Sites (during work sessions)</span>
+            <p class="text-xs text-gray-500 mt-0.5 mb-2">
+              Enter hostnames like <code class="font-mono bg-gray-100 px-1 rounded">example.com</code>. No protocol or path.
+            </p>
+
+            <div class="flex gap-2">
+              <input
+                type="text"
+                value={hostnameInput()}
+                onInput={(e) => {
+                  setHostnameInput(e.currentTarget.value);
+                  setHostnameError('');
+                }}
+                onKeyDown={handleHostnameKeyDown}
+                placeholder="e.g. example.com"
+                aria-label="Hostname to block"
+                aria-describedby={hostnameError() ? 'hostname-error' : undefined}
+                class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              />
+              <button
+                type="button"
+                onClick={handleAddHostname}
+                class="bg-red-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+              >
+                Add
+              </button>
+            </div>
+
+            <Show when={hostnameError()}>
+              <p id="hostname-error" class="mt-1 text-xs text-red-600" role="alert">{hostnameError()}</p>
+            </Show>
+
+            <Show when={blockedSites().length > 0}>
+              <ul class="mt-2 space-y-1" aria-label="Blocked hostnames">
+                <For each={blockedSites()}>
+                  {(hostname) => (
+                    <li class="flex items-center justify-between bg-gray-50 border border-gray-200 rounded px-3 py-1.5 text-sm">
+                      <span class="font-mono text-gray-800">{hostname}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveHostname(hostname)}
+                        aria-label={`Remove ${hostname}`}
+                        class="text-gray-400 hover:text-red-600 focus:outline-none focus:text-red-600 ml-2 text-xs"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </div>
         </div>
 
         <div class="mt-6 flex items-center gap-4">
