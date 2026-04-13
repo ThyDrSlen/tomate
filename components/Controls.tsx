@@ -9,6 +9,7 @@ type ControlsProps = {
   onSkipLongBreak: () => void;
 };
 
+// Renders phase-appropriate action buttons for the timer
 export default function Controls(props: ControlsProps) {
   return (
     <div class="mt-5 flex gap-3 justify-center">
