@@ -34,8 +34,12 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    try {
+      const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
+      setState(currentState as TimerState);
+    } catch {
+      // Service worker may be restarting; leave the default INITIAL_STATE (idle)
+    }
 
     const config = await getConfig();
     setDailyGoal(config.dailyGoal);
@@ -68,9 +72,15 @@ export default function App() {
   const formatTime = () => {
     const ms = remaining();
     const totalSeconds = Math.ceil(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    const mm = String(minutes).padStart(2, '0');
+    const ss = String(seconds).padStart(2, '0');
+    if (hours > 0) {
+      return `${String(hours).padStart(2, '0')}:${mm}:${ss}`;
+    }
+    return `${mm}:${ss}`;
   };
 
   const progress = () => {

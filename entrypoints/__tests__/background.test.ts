@@ -8,6 +8,7 @@ import {
   getPendingCelebration,
   getSessionHistory,
   getTimerState,
+  setBlockedSites,
   setCurrentLabel,
   setTimerState,
   toDateKey,
@@ -48,6 +49,17 @@ describe('background service worker', () => {
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+
+    // Stub declarativeNetRequest so blocking helpers don't throw in any test.
+    (fakeBrowser as typeof fakeBrowser & {
+      declarativeNetRequest: {
+        getDynamicRules: ReturnType<typeof vi.fn>;
+        updateDynamicRules: ReturnType<typeof vi.fn>;
+      };
+    }).declarativeNetRequest = {
+      getDynamicRules: vi.fn().mockResolvedValue([]),
+      updateDynamicRules: vi.fn().mockResolvedValue(undefined),
+    };
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
@@ -270,6 +282,180 @@ describe('background service worker', () => {
     await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
       expect.objectContaining({
         scheduledTime: 25_000,
+      }),
+    );
+  });
+
+  it('opens a tab when a WORKING session completes and openBreakTab is true (#269)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    // Persist openBreakTab = true into storage before background initialises
+    const { setConfig } = await import('@/lib/storage');
+    await setConfig(createConfig({ openBreakTab: true }));
+    await initBackground();
+
+    fakeBrowser.tabs.create = vi.fn().mockResolvedValue({ id: 1 });
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(fakeBrowser.tabs.create).toHaveBeenCalledOnce();
+    expect(fakeBrowser.tabs.create).toHaveBeenCalledWith(
+      expect.objectContaining({ url: expect.stringContaining('stats') }),
+    );
+  });
+
+  it('does NOT open a tab when a WORKING session completes and openBreakTab is false (#269)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    const { setConfig } = await import('@/lib/storage');
+    await setConfig(createConfig({ openBreakTab: false }));
+    await initBackground();
+
+    fakeBrowser.tabs.create = vi.fn().mockResolvedValue({ id: 1 });
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(fakeBrowser.tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('recovers a missed WORKING alarm on startup (multi-hop: endTime hours in the past) and transitions to SHORT_BREAK', async () => {
+    // Simulate the browser being closed while a WORKING session was active.
+    // The endTime is several hours in the past, well past when the session ended.
+    const now = 3 * 60 * 60 * 1_000; // 3 hours in ms as "now"
+    const sessionStart = 1_000;
+    const sessionEnd = sessionStart + DEFAULT_CONFIG.workDuration; // endTime is hours before "now"
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    await setCurrentLabel('Overnight session');
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: sessionStart,
+        endTime: sessionEnd,
+        duration: DEFAULT_CONFIG.workDuration,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onStartup.trigger();
+
+    // A single recoverMissedAlarm hop: WORKING → SHORT_BREAK (startTime=now, endTime=now+shortBreak)
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: now,
+        endTime: now + DEFAULT_CONFIG.shortBreakDuration,
+        duration: DEFAULT_CONFIG.shortBreakDuration,
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+    );
+    // The completed WORKING session must be recorded
+    await expect(getSessionHistory()).resolves.toEqual([
+      {
+        id: expect.any(String),
+        label: 'Overnight session',
+        startTime: sessionStart,
+        endTime: now,
+        date: toDateKey(sessionStart),
+        duration: DEFAULT_CONFIG.workDuration,
+      },
+    ]);
+    // A timer alarm must be scheduled for the break's end
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
+      expect.objectContaining({
+        scheduledTime: now + DEFAULT_CONFIG.shortBreakDuration,
+      }),
+    );
+  });
+
+  it('recovers a missed SHORT_BREAK alarm on startup (multi-hop: break endTime in the past) and returns to IDLE', async () => {
+    // Simulate browser restart where a SHORT_BREAK was active but has also elapsed.
+    const now = 2 * 60 * 60 * 1_000; // 2 hours in ms as "now"
+    const breakStart = 1_000;
+    const breakEnd = breakStart + DEFAULT_CONFIG.shortBreakDuration; // endTime is hours before "now"
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    await setTimerState(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: breakStart,
+        endTime: breakEnd,
+        duration: DEFAULT_CONFIG.shortBreakDuration,
+        sessionCount: 1,
+        cyclePosition: 0,
+        completedToday: 1,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onStartup.trigger();
+
+    // A single recoverMissedAlarm hop: SHORT_BREAK → IDLE (cyclePosition increments)
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'IDLE',
+        startTime: null,
+        endTime: null,
+        duration: null,
+        sessionCount: 1,
+        cyclePosition: 1,
+        completedToday: 1,
+      }),
+    );
+    // No additional session should be recorded (only WORKING sessions are persisted)
+    await expect(getSessionHistory()).resolves.toEqual([]);
+    // All alarms must be cleared
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toBeUndefined();
+    await expect(fakeBrowser.alarms.get('badge-refresh')).resolves.toBeUndefined();
+  });
+
+  it('applies blocking rules on startup when phase is WORKING and blocked sites are configured (#371)', async () => {
+    // Freeze time so the timer has not yet elapsed; recoverFromMissedAlarm will
+    // find no missed alarm and leave the phase as WORKING, after which
+    // applyBlockingOnStartup should call updateDynamicRules with blocking rules.
+    const now = 2_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+
+    const dnr = (fakeBrowser as typeof fakeBrowser & {
+      declarativeNetRequest: {
+        getDynamicRules: ReturnType<typeof vi.fn>;
+        updateDynamicRules: ReturnType<typeof vi.fn>;
+      };
+    }).declarativeNetRequest;
+
+    const blockedSites = ['twitter.com', 'reddit.com'];
+    await setBlockedSites(blockedSites);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: now + DEFAULT_CONFIG.workDuration,
+        duration: DEFAULT_CONFIG.workDuration,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onStartup.trigger();
+
+    expect(dnr.updateDynamicRules).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addRules: expect.arrayContaining([
+          expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'twitter.com' }) }),
+          expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'reddit.com' }) }),
+        ]),
       }),
     );
   });
