@@ -128,7 +128,7 @@ export default defineBackground(() => {
     await setTimerState(recovered);
 
     if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
+      await persistCompletedSession(state, state.endTime ?? Date.now());
     }
 
     if (recovered.phase === 'SHORT_BREAK' && recovered.endTime !== null) {
