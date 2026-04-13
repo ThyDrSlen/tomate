@@ -46,6 +46,11 @@ describe('background service worker', () => {
     fakeBrowser.reset();
     await fakeBrowser.storage.local.clear();
 
+    // fakeBrowser.runtime.sendMessage passes an empty sender object (sender.id = undefined).
+    // The background's onMessage guard rejects messages where sender.id !== runtime.id, so
+    // clear runtime.id to match the empty sender so test messages are accepted (#236).
+    (fakeBrowser.runtime as unknown as { id: string | undefined }).id = undefined;
+
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
   });
@@ -241,6 +246,38 @@ describe('background service worker', () => {
     await initBackground();
 
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
+  });
+
+  it('clamps workDuration: 0 to at least 1000ms in UPDATE_CONFIG, preventing an infinite alarm loop', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    const zeroConfig = createConfig({ workDuration: 0, shortBreakDuration: 0, longBreakDuration: 0 });
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 5_000,
+        endTime: 15_000,
+        duration: 10_000,
+      }),
+    );
+    await initBackground();
+
+    const response = await fakeBrowser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config: zeroConfig });
+
+    // All durations must be clamped to at least 1000ms in the persisted config.
+    const savedConfig = await getConfig();
+    expect(savedConfig.workDuration).toBeGreaterThanOrEqual(1_000);
+    expect(savedConfig.shortBreakDuration).toBeGreaterThanOrEqual(1_000);
+    expect(savedConfig.longBreakDuration).toBeGreaterThanOrEqual(1_000);
+
+    // endTime must not be in the past relative to now=10_000.
+    // A zero-duration would produce endTime = 5_000 + 0 = 5_000 < now, scheduling an alarm
+    // in the past and immediately re-triggering it (infinite loop, #237).
+    // adjustDuration floors endTime at currentTime, so the result must be >= now.
+    const endTime = (response as { endTime: number }).endTime;
+    expect(endTime).toBeGreaterThanOrEqual(10_000);
+
+    const alarm = await fakeBrowser.alarms.get('tomate-timer');
+    expect(alarm?.scheduledTime).toBeGreaterThanOrEqual(10_000);
   });
 
   it('updates config during an active timer and recreates the timer alarm', async () => {
