@@ -27,6 +27,7 @@ export default function App() {
   const [todayCount, setTodayCount] = createSignal(0);
   const [dailyGoal, setDailyGoal] = createSignal<number | undefined>(undefined);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
+  const [isReconnecting, setIsReconnecting] = createSignal(false);
 
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
@@ -34,8 +35,20 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    let currentState: TimerState | undefined;
+    try {
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('GET_STATE timeout')), 3000),
+      );
+      currentState = (await Promise.race([
+        browser.runtime.sendMessage({ action: 'GET_STATE' }),
+        timeout,
+      ])) as TimerState;
+    } catch {
+      setIsReconnecting(true);
+      return;
+    }
+    setState(currentState);
 
     const config = await getConfig();
     setDailyGoal(config.dailyGoal);
@@ -120,28 +133,39 @@ export default function App() {
         </button>
       </div>
 
-      <TimerRing progress={progress()} phase={state().phase} />
-      <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
+      <Switch>
+        <Match when={isReconnecting()}>
+          <div class="flex flex-col items-center justify-center py-10 gap-2" role="status" aria-live="polite">
+            <div class="text-gray-400 text-3xl animate-spin">↻</div>
+            <p class="text-sm text-gray-500 font-medium">Reconnecting…</p>
+            <p class="text-xs text-gray-400">Service is restarting, please wait.</p>
+          </div>
+        </Match>
+        <Match when={!isReconnecting()}>
+          <TimerRing progress={progress()} phase={state().phase} />
+          <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
-      <div class="text-sm text-gray-500 mt-1">
-        <Switch>
-          <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
-          <Match when={state().phase === 'WORKING'}>Working</Match>
-          <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
-          <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
-          <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
-        </Switch>
-      </div>
+          <div class="text-sm text-gray-500 mt-1">
+            <Switch>
+              <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
+              <Match when={state().phase === 'WORKING'}>Working</Match>
+              <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
+              <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
+              <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
+            </Switch>
+          </div>
 
-      <TaskLabel value={label()} onChange={handleLabelChange} />
+          <TaskLabel value={label()} onChange={handleLabelChange} />
 
-      <Controls
-        phase={state().phase}
-        onStart={startTimer}
-        onAbandon={abandonTimer}
-        onAcceptLongBreak={acceptLongBreak}
-        onSkipLongBreak={skipLongBreak}
-      />
+          <Controls
+            phase={state().phase}
+            onStart={startTimer}
+            onAbandon={abandonTimer}
+            onAcceptLongBreak={acceptLongBreak}
+            onSkipLongBreak={skipLongBreak}
+          />
+        </Match>
+      </Switch>
 
       <TodayCount count={todayCount()} goal={dailyGoal()} />
 
