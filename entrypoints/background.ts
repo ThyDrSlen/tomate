@@ -187,8 +187,18 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
-        await setConfig(message.config);
-        const nextState = adjustDuration(state, message.config);
+        // Clamp all duration fields to at least 1 second to prevent an infinite
+        // alarm loop when workDuration is 0 — adjustDuration would schedule
+        // endTime in the past, retriggering the alarm immediately (#237).
+        const MIN_DURATION_MS = 1_000;
+        const safeConfig: TimerConfig = {
+          ...message.config,
+          workDuration: Math.max(message.config.workDuration, MIN_DURATION_MS),
+          shortBreakDuration: Math.max(message.config.shortBreakDuration, MIN_DURATION_MS),
+          longBreakDuration: Math.max(message.config.longBreakDuration, MIN_DURATION_MS),
+        };
+        await setConfig(safeConfig);
+        const nextState = adjustDuration(state, safeConfig);
         await setTimerState(nextState);
 
         if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
@@ -202,7 +212,10 @@ export default defineBackground(() => {
         return nextState;
       }
       default: {
-        return state;
+        // Unknown action — log and return an error rather than silently
+        // returning stale state, which can mask bugs in callers (#238).
+        console.warn('[tomate] handleMessage: unknown action received', (message as { action?: unknown }).action);
+        return { error: 'unknown_action', action: (message as { action?: unknown }).action };
       }
     }
   };
@@ -238,6 +251,52 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
+
+  // Keep declarativeNetRequest block rules in sync with the blockedSites storage
+  // key.  Validate that newValue is a genuine string[] before touching DNR rules;
+  // a non-array value (e.g. undefined on key deletion, or a corrupted write) used
+  // to be cast blindly and would produce garbage rule objects (#240).
+  browser.storage.onChanged.addListener(async (changes, areaName) => {
+    if (areaName !== 'local' || !('blockedSites' in changes)) {
+      return;
+    }
+
+    const { newValue } = changes['blockedSites'] as { newValue?: unknown };
+
+    if (!Array.isArray(newValue) || !newValue.every((v) => typeof v === 'string')) {
+      console.warn('[tomate] blockedSites change ignored: newValue is not a string[]', newValue);
+      return;
+    }
+
+    const sites: string[] = newValue;
+
+    const dnr = (browser as typeof browser & {
+      declarativeNetRequest?: {
+        getDynamicRules(): Promise<{ id: number }[]>;
+        updateDynamicRules(opts: { removeRuleIds: number[]; addRules: object[] }): Promise<void>;
+      };
+    }).declarativeNetRequest;
+
+    if (!dnr) {
+      return;
+    }
+
+    try {
+      const existing = await dnr.getDynamicRules();
+      const newRules = sites.map((site, idx) => ({
+        id: idx + 1,
+        priority: 1,
+        action: { type: 'block' },
+        condition: { urlFilter: site, resourceTypes: ['main_frame'] },
+      }));
+      await dnr.updateDynamicRules({
+        removeRuleIds: existing.map((r) => r.id),
+        addRules: newRules,
+      });
+    } catch (err) {
+      console.error('[tomate] Failed to update DNR rules for blockedSites', err);
+    }
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
