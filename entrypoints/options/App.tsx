@@ -81,6 +81,10 @@ export default function App() {
       <div class="w-full max-w-[400px] bg-white rounded-lg shadow-sm p-6">
         <h1 class="text-xl font-bold text-red-600 mb-6">Tomate Settings</h1>
 
+        <p class="text-xs text-gray-500 mb-4 -mt-2">
+          Duration changes apply to new sessions only — active timers are not affected.
+        </p>
+
         <div class="space-y-4">
           <label class="block">
             <span class="text-sm font-medium text-gray-700">Work Duration (minutes)</span>
@@ -158,7 +162,7 @@ export default function App() {
           </button>
 
           <Show when={saved()}>
-            <span class="text-sm text-green-600">Settings saved ✓</span>
+            <span class="text-sm text-green-600">Settings saved. Duration changes apply to the next session.</span>
           </Show>
         </div>
 
