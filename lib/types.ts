@@ -7,6 +7,7 @@ export type TimerConfig = {
   openBreakTab: boolean;
   playCompletionSound: boolean;
   dailyGoal: number;
+  blockedSites: string[];
 };
 
 export type TimerState = {
@@ -35,6 +36,7 @@ export const DEFAULT_CONFIG: TimerConfig = {
   openBreakTab: true,
   playCompletionSound: true,
   dailyGoal: 8,
+  blockedSites: [],
 };
 
 export const INITIAL_STATE: TimerState = {

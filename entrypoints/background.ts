@@ -32,6 +32,52 @@ export type MessageAction =
   | { action: 'SKIP_LONG_BREAK' }
   | { action: 'UPDATE_CONFIG'; config: TimerConfig };
 
+// Base rule ID offset for blocked-site DNR rules (avoids collisions with static rules)
+const DNR_RULE_ID_OFFSET = 1000;
+
+type DnrApi = {
+  getDynamicRules(): Promise<{ id: number }[]>;
+  updateDynamicRules(opts: { addRules?: unknown[]; removeRuleIds?: number[] }): Promise<void>;
+};
+
+const getDnr = (): DnrApi | undefined =>
+  (browser as typeof browser & { declarativeNetRequest?: DnrApi }).declarativeNetRequest;
+
+/**
+ * Replace all dynamic blocked-site DNR rules with rules derived from the
+ * provided list of validated hostnames.  Silently no-ops if the
+ * declarativeNetRequest API is unavailable.
+ */
+const applyBlockedSiteRules = async (hostnames: string[]): Promise<void> => {
+  const dnr = getDnr();
+  if (!dnr) return;
+
+  try {
+    const existing = await dnr.getDynamicRules();
+    const removeRuleIds = existing.map((r) => r.id);
+
+    const addRules = hostnames.map((hostname, index) => ({
+      id: DNR_RULE_ID_OFFSET + index,
+      priority: 1,
+      action: { type: 'block' },
+      condition: {
+        urlFilter: `||${hostname}^`,
+        resourceTypes: [
+          'main_frame',
+          'sub_frame',
+          'xmlhttprequest',
+          'websocket',
+          'other',
+        ],
+      },
+    }));
+
+    await dnr.updateDynamicRules({ removeRuleIds, addRules });
+  } catch {
+    // declarativeNetRequest may not be available; silently ignore
+  }
+};
+
 export default defineBackground(() => {
   const ALARM_TIMER = 'tomate-timer';
   const ALARM_BADGE_REFRESH = 'badge-refresh';
@@ -188,6 +234,7 @@ export default defineBackground(() => {
       }
       case 'UPDATE_CONFIG': {
         await setConfig(message.config);
+        await applyBlockedSiteRules(message.config.blockedSites ?? []);
         const nextState = adjustDuration(state, message.config);
         await setTimerState(nextState);
 
@@ -208,27 +255,10 @@ export default defineBackground(() => {
   };
 
   browser.runtime.onInstalled.addListener(async (details) => {
-    // On fresh install or update, remove any stale dynamic declarativeNetRequest rules (#103)
+    // On fresh install or update, re-sync dynamic declarativeNetRequest rules from stored config (#103)
     if (details.reason === 'install' || details.reason === 'update') {
-      try {
-        const existing = await (browser as typeof browser & {
-          declarativeNetRequest?: {
-            getDynamicRules(): Promise<{ id: number }[]>;
-            updateDynamicRules(opts: { removeRuleIds: number[] }): Promise<void>;
-          };
-        }).declarativeNetRequest?.getDynamicRules();
-        if (existing && existing.length > 0) {
-          await (browser as typeof browser & {
-            declarativeNetRequest?: {
-              updateDynamicRules(opts: { removeRuleIds: number[] }): Promise<void>;
-            };
-          }).declarativeNetRequest?.updateDynamicRules({
-            removeRuleIds: existing.map((r) => r.id),
-          });
-        }
-      } catch {
-        // declarativeNetRequest may not be available if permission not declared
-      }
+      const config = await getConfig();
+      await applyBlockedSiteRules(config.blockedSites ?? []);
     }
     await recoverFromMissedAlarm();
   });
