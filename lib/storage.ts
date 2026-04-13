@@ -76,6 +76,22 @@ export const getSessionHistory = async (days?: number): Promise<CompletedSession
   return sessions.filter((session) => session.date >= earliestKey);
 };
 
+export const getRecentSessions = async (limit: number): Promise<CompletedSession[]> => {
+  if (limit <= 0) {
+    return [];
+  }
+
+  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+
+  return sessions.slice(-limit);
+};
+
+export const getSessionCount = async (): Promise<number> => {
+  const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+
+  return sessions.length;
+};
+
 export const getHeatmapData = async (days: number): Promise<Record<string, number>> => {
   const sessions = await getSessionHistory(days);
 
