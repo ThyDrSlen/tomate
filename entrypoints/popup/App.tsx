@@ -33,9 +33,14 @@ export default function App() {
     setHeatmapData(await getHeatmapData(120));
   };
 
+  const isValidTimerState = (value: unknown): value is TimerState =>
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as Record<string, unknown>).phase === 'string';
+
   onMount(async () => {
     const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    setState(isValidTimerState(currentState) ? currentState : INITIAL_STATE);
 
     const config = await getConfig();
     setDailyGoal(config.dailyGoal);
@@ -81,22 +86,22 @@ export default function App() {
 
   const startTimer = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'START_TIMER' });
-    setState(newState as TimerState);
+    setState(isValidTimerState(newState) ? newState : INITIAL_STATE);
   };
 
   const abandonTimer = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'ABANDON_TIMER' });
-    setState(newState as TimerState);
+    setState(isValidTimerState(newState) ? newState : INITIAL_STATE);
   };
 
   const acceptLongBreak = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
-    setState(newState as TimerState);
+    setState(isValidTimerState(newState) ? newState : INITIAL_STATE);
   };
 
   const skipLongBreak = async () => {
     const newState = await browser.runtime.sendMessage({ action: 'SKIP_LONG_BREAK' });
-    setState(newState as TimerState);
+    setState(isValidTimerState(newState) ? newState : INITIAL_STATE);
   };
 
   let labelTimeout: ReturnType<typeof setTimeout>;
