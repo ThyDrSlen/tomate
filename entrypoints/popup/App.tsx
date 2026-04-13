@@ -34,7 +34,10 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
+    const currentState = await Promise.race([
+      browser.runtime.sendMessage({ action: 'GET_STATE' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+    ]).catch(() => INITIAL_STATE);
     setState(currentState as TimerState);
 
     const config = await getConfig();
@@ -49,8 +52,13 @@ export default function App() {
     setLabel(await getCurrentLabel());
     await refreshStats();
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const onStorageChanged = (changes: Record<string, unknown>) => {
+      if ('sessions' in changes) {
+        refreshStats();
+      }
+    };
+    browser.storage.onChanged.addListener(onStorageChanged);
+    onCleanup(() => browser.storage.onChanged.removeListener(onStorageChanged));
   });
 
   createEffect(() => {
