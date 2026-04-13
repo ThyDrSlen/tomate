@@ -42,6 +42,15 @@ export const computeBestDay = (
   return { date: bestDate, count: bestCount };
 };
 
+/**
+ * Prefixes formula-triggering characters with a single quote to prevent
+ * CSV injection when the value is opened in a spreadsheet application.
+ */
+export const sanitizeCSVCell = (val: string): string => {
+  const s = String(val);
+  return /^[=+\-@]/.test(s) ? `'${s}` : s;
+};
+
 export const computeStreak = (sessions: CompletedSession[]): number => {
   if (sessions.length === 0) return 0;
 
