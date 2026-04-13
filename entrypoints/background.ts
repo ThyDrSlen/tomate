@@ -40,6 +40,22 @@ export default defineBackground(() => {
   const BADGE_GOLD = '#CA8A04';
   const badgeApi = browser.action;
 
+  // Lazy-load config from storage on first access after each service worker
+  // restart. Chrome MV3 service workers restart frequently; initialising
+  // cachedConfig to DEFAULT_CONFIG and only hydrating it inside
+  // onInstalled/onStartup means any alarm or message that fires before those
+  // listeners run will operate on stale defaults (#516).
+  //
+  // Pattern: configPromise is null until the first getOrLoadConfig() call.
+  // UPDATE_CONFIG sets it to null so the next access re-reads from storage.
+  let configPromise: Promise<TimerConfig> | null = null;
+  function getOrLoadConfig(): Promise<TimerConfig> {
+    if (!configPromise) {
+      configPromise = getConfig();
+    }
+    return configPromise;
+  }
+
   const refreshBadge = async (): Promise<void> => {
     const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
 
@@ -117,7 +133,7 @@ export default defineBackground(() => {
   };
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    const [state, config] = await Promise.all([getTimerState(), getOrLoadConfig()]);
     const recovered = recoverMissedAlarm(state, config);
 
     if (!recovered) {
@@ -142,7 +158,7 @@ export default defineBackground(() => {
   };
 
   const handleMessage = async (message: MessageAction) => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    const [state, config] = await Promise.all([getTimerState(), getOrLoadConfig()]);
 
     switch (message.action) {
       case 'START_TIMER': {
@@ -187,7 +203,10 @@ export default defineBackground(() => {
         return nextState;
       }
       case 'UPDATE_CONFIG': {
+        // Persist first, then invalidate the promise so the next getOrLoadConfig()
+        // call re-reads from storage (picks up any writes made outside this SW).
         await setConfig(message.config);
+        configPromise = Promise.resolve(message.config);
         const nextState = adjustDuration(state, message.config);
         await setTimerState(nextState);
 
@@ -249,7 +268,7 @@ export default defineBackground(() => {
       return;
     }
 
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    const [state, config] = await Promise.all([getTimerState(), getOrLoadConfig()]);
     const completed = completeTimer(state, config);
     await setTimerState(completed);
 
