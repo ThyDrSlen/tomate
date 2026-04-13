@@ -16,7 +16,6 @@ import {
   getConfig,
   getCurrentLabel,
   getTimerState,
-  getTodayCount,
   setConfig,
   setPendingCelebration,
   setTimerState,
@@ -41,7 +40,10 @@ export default defineBackground(() => {
   const badgeApi = browser.action;
 
   const refreshBadge = async (): Promise<void> => {
-    const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
+    const state = await getTimerState();
+    // completedToday is valid only for lastWorkDate; return 0 if the date rolled over.
+    const todayKey = toDateKey(Date.now());
+    const todayCount = state.lastWorkDate === todayKey ? state.completedToday : 0;
 
     let text = '';
     let color = BADGE_RED;
@@ -244,7 +246,9 @@ export default defineBackground(() => {
     return handleMessage(message as MessageAction);
   });
 
-  browser.alarms.onAlarm.addListener(async (alarm) => {
+  let alarmHandling = false;
+
+  const handleAlarm = async (alarm: browser.alarms.Alarm): Promise<void> => {
     if (alarm.name === ALARM_BADGE_REFRESH) {
       await refreshBadge();
       return;
@@ -296,5 +300,15 @@ export default defineBackground(() => {
     }
 
     await refreshBadge();
+  };
+
+  browser.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarmHandling) return;
+    alarmHandling = true;
+    try {
+      await handleAlarm(alarm);
+    } finally {
+      alarmHandling = false;
+    }
   });
 });
