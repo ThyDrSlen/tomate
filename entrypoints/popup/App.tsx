@@ -104,6 +104,7 @@ export default function App() {
     setLabel(value);
     clearTimeout(labelTimeout);
     labelTimeout = setTimeout(() => setCurrentLabel(value), 300);
+    onCleanup(() => clearTimeout(labelTimeout));
   };
 
   return (
