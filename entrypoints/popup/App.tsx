@@ -28,6 +28,9 @@ export default function App() {
   const [dailyGoal, setDailyGoal] = createSignal<number | undefined>(undefined);
   const [heatmapData, setHeatmapData] = createSignal<Record<string, number>>({});
 
+  let primaryButtonRef: HTMLButtonElement | undefined;
+  let prevPhase = INITIAL_STATE.phase;
+
   const refreshStats = async () => {
     setTodayCount(await getTodayCount());
     setHeatmapData(await getHeatmapData(120));
@@ -62,6 +65,14 @@ export default function App() {
       onCleanup(() => clearInterval(id));
     } else {
       setRemaining(0);
+    }
+  });
+
+  createEffect(() => {
+    const currentPhase = state().phase;
+    if (currentPhase !== prevPhase) {
+      prevPhase = currentPhase;
+      primaryButtonRef?.focus();
     }
   });
 
@@ -141,6 +152,7 @@ export default function App() {
         onAbandon={abandonTimer}
         onAcceptLongBreak={acceptLongBreak}
         onSkipLongBreak={skipLongBreak}
+        primaryButtonRef={(el) => { primaryButtonRef = el; }}
       />
 
       <TodayCount count={todayCount()} goal={dailyGoal()} />
