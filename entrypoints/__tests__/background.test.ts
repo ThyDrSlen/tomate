@@ -8,6 +8,7 @@ import {
   getPendingCelebration,
   getSessionHistory,
   getTimerState,
+  setBlockedSites,
   setCurrentLabel,
   setTimerState,
   toDateKey,
@@ -48,6 +49,17 @@ describe('background service worker', () => {
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+
+    // Stub declarativeNetRequest so blocking helpers don't throw in any test.
+    (fakeBrowser as typeof fakeBrowser & {
+      declarativeNetRequest: {
+        getDynamicRules: ReturnType<typeof vi.fn>;
+        updateDynamicRules: ReturnType<typeof vi.fn>;
+      };
+    }).declarativeNetRequest = {
+      getDynamicRules: vi.fn().mockResolvedValue([]),
+      updateDynamicRules: vi.fn().mockResolvedValue(undefined),
+    };
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
@@ -270,6 +282,44 @@ describe('background service worker', () => {
     await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
       expect.objectContaining({
         scheduledTime: 25_000,
+      }),
+    );
+  });
+
+  it('applies blocking rules on startup when phase is WORKING and blocked sites are configured (#371)', async () => {
+    // Freeze time so the timer has not yet elapsed; recoverFromMissedAlarm will
+    // find no missed alarm and leave the phase as WORKING, after which
+    // applyBlockingOnStartup should call updateDynamicRules with blocking rules.
+    const now = 2_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+
+    const dnr = (fakeBrowser as typeof fakeBrowser & {
+      declarativeNetRequest: {
+        getDynamicRules: ReturnType<typeof vi.fn>;
+        updateDynamicRules: ReturnType<typeof vi.fn>;
+      };
+    }).declarativeNetRequest;
+
+    const blockedSites = ['twitter.com', 'reddit.com'];
+    await setBlockedSites(blockedSites);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: now + DEFAULT_CONFIG.workDuration,
+        duration: DEFAULT_CONFIG.workDuration,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onStartup.trigger();
+
+    expect(dnr.updateDynamicRules).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addRules: expect.arrayContaining([
+          expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'twitter.com' }) }),
+          expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'reddit.com' }) }),
+        ]),
       }),
     );
   });

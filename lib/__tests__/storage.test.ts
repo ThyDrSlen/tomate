@@ -4,6 +4,7 @@ import { fakeBrowser } from 'wxt/testing';
 vi.mock('wxt/browser', () => ({ browser: fakeBrowser }));
 
 import {
+  MAX_SESSIONS,
   addCompletedSession,
   getConfig,
   getCurrentLabel,
@@ -148,5 +149,39 @@ describe('storage helpers', () => {
 
     await setPendingCelebration(false);
     await expect(getPendingCelebration()).resolves.toBe(false);
+  });
+
+  it('trims old sessions and re-applies MAX_SESSIONS cap before retrying on quota error (#202)', async () => {
+    // Seed more than MAX_SESSIONS existing sessions so trimming is observable.
+    const existingCount = MAX_SESSIONS + 10;
+    const existing: CompletedSession[] = Array.from({ length: existingCount }, (_, i) =>
+      createSession(i * 1_000, { id: `old-${i}` }),
+    );
+    await fakeBrowser.storage.local.set({ sessions: existing });
+
+    const quotaError = Object.assign(new Error('quota exceeded'), { name: 'QuotaExceededError' });
+    const originalSet = fakeBrowser.storage.local.set.bind(fakeBrowser.storage.local);
+    let firstCall = true;
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(async (items) => {
+      if (firstCall && 'sessions' in items) {
+        firstCall = false;
+        throw quotaError;
+      }
+      return originalSet(items);
+    });
+
+    const newSession = createSession(existingCount * 1_000, { id: 'new-session' });
+    await addCompletedSession(newSession);
+
+    const stored = await getSessionHistory();
+
+    // The retry payload must not exceed MAX_SESSIONS.
+    expect(stored.length).toBeLessThanOrEqual(MAX_SESSIONS);
+
+    // The new session must be present after the retry.
+    expect(stored.at(-1)).toEqual(newSession);
+
+    // Oldest sessions were dropped — the first existing session should be gone.
+    expect(stored.find((s) => s.id === 'old-0')).toBeUndefined();
   });
 });
