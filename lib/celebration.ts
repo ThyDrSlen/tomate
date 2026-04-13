@@ -29,7 +29,14 @@ export const playCelebration = (type: 'work' | 'milestone' | 'break', playSound 
     try {
       new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html'))
         .play()
-        .catch(() => {});
+        .catch((err: unknown) => {
+          // Autoplay policy or muted state blocks playback — not an error worth surfacing
+          if (err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'AbortError')) {
+            console.debug('[tomate] completion sound blocked by browser policy:', err.name);
+            return;
+          }
+          console.warn('[tomate] completion sound failed to play:', err);
+        });
     } catch {
       // Audio constructor can throw in non-browser environments
     }
