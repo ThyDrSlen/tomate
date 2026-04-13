@@ -108,7 +108,7 @@ export default defineBackground(() => {
       label,
       startTime: state.startTime,
       endTime,
-      date: toDateKey(state.startTime),
+      date: toDateKey(endTime),
       duration: state.duration,
     };
 
@@ -117,24 +117,35 @@ export default defineBackground(() => {
   };
 
   const recoverFromMissedAlarm = async (): Promise<void> => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const recovered = recoverMissedAlarm(state, config);
+    const [initialState, config] = await Promise.all([getTimerState(), getConfig()]);
 
-    if (!recovered) {
+    const MAX_HOPS = 10;
+    let current = initialState;
+    let hops = 0;
+
+    while (hops < MAX_HOPS) {
+      const recovered = recoverMissedAlarm(current, config);
+      if (!recovered) break;
+
+      if (current.phase === 'WORKING') {
+        await persistCompletedSession(current, Date.now());
+      }
+
+      current = recovered;
+      hops++;
+    }
+
+    if (hops === 0) {
       await refreshBadge();
       return;
     }
 
-    await setTimerState(recovered);
+    await setTimerState(current);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
-    }
-
-    if (recovered.phase === 'SHORT_BREAK' && recovered.endTime !== null) {
-      await scheduleTimerAlarm(recovered.endTime);
+    if (isActivePhase(current.phase) && current.endTime !== null) {
+      await scheduleTimerAlarm(current.endTime);
       await startBadgeRefresh();
-    } else if (!isActivePhase(recovered.phase)) {
+    } else {
       await clearActiveAlarms();
     }
 
@@ -256,10 +267,11 @@ export default defineBackground(() => {
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
       if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+        const workTitle = (() => { try { return browser.i18n.getMessage('notificationWorkTitle'); } catch { return ''; } })();
         await browser.notifications.create({
           type: 'basic',
           iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: '🍅 Tomate Complete!',
+          title: workTitle || '🍅 Tomate Complete!',
           message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
         });
       }
@@ -274,11 +286,16 @@ export default defineBackground(() => {
 
     if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
       if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+        const i18n = (key: string): string => { try { return browser.i18n.getMessage(key as any); } catch { return ''; } };
         await browser.notifications.create({
           type: 'basic',
           iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+          title: state.phase === 'SHORT_BREAK'
+            ? (i18n('notificationShortBreakOver') || "Break's Over")
+            : (i18n('notificationLongBreakOver') || "Long Break's Over"),
+          message: state.phase === 'SHORT_BREAK'
+            ? (i18n('notificationShortBreakMessage') || 'Ready for another tomate?')
+            : (i18n('notificationLongBreakMessage') || "Refreshed? Let's go!"),
         });
       }
     }

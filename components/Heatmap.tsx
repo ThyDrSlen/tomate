@@ -4,6 +4,11 @@ type HeatmapProps = {
   data: Record<string, number>;
   days: number;
   cellSize?: number;
+  /**
+   * If provided, the heatmap starts from this date instead of rolling back
+   * `days` from today. Useful for calendar-year views (#199).
+   */
+  startDate?: Date;
 };
 
 type HeatmapCell = {
@@ -22,10 +27,10 @@ const INTENSITY_COLORS = [
 
 const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''] as const;
 
-const MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-] as const;
+const getShortMonthName = (monthIndex: number): string => {
+  const date = new Date(2000, monthIndex, 1);
+  return new Intl.DateTimeFormat(undefined, { month: 'short' }).format(date);
+};
 
 const getIntensityColor = (count: number): string => {
   if (count === 0) return INTENSITY_COLORS[0];
@@ -42,15 +47,40 @@ const toDateKey = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+const MIN_DISPLAY_DAYS = 12 * 7; // 12 weeks minimum so layout doesn't break with sparse data (#104)
+
 const generateHeatmapGrid = (
   data: Record<string, number>,
   days: number,
+  startDate?: Date,
 ): HeatmapCell[] => {
   const cells: HeatmapCell[] = [];
+
+  if (startDate) {
+    // Fixed-start mode: render exactly `days` days from startDate (#199)
+    const base = new Date(startDate);
+    base.setHours(0, 0, 0, 0);
+    for (let i = 0; i < days; i++) {
+      const date = new Date(base);
+      date.setDate(base.getDate() + i);
+      const key = toDateKey(date);
+      cells.push({
+        date: key,
+        count: data[key] ?? 0,
+        dayOfWeek: date.getDay(),
+      });
+    }
+    return cells;
+  }
+
+  // Rolling-window mode: default behaviour (back N days from today)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  for (let i = days - 1; i >= 0; i--) {
+  // Always render at least 12 weeks so month labels and grid columns stay sane
+  const effectiveDays = Math.max(days, MIN_DISPLAY_DAYS);
+
+  for (let i = effectiveDays - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     const key = toDateKey(date);
@@ -70,7 +100,7 @@ export default function Heatmap(props: HeatmapProps) {
   const cellSize = () => props.cellSize ?? 12;
   const gap = 2;
 
-  const grid = createMemo(() => generateHeatmapGrid(props.data, props.days));
+  const grid = createMemo(() => generateHeatmapGrid(props.data, props.days, props.startDate));
 
   const toMonRow = (jsDay: number) => (jsDay === 0 ? 6 : jsDay - 1);
 
@@ -110,7 +140,7 @@ export default function Heatmap(props: HeatmapProps) {
       if (firstCell) {
         const month = Number.parseInt(firstCell.date.split('-')[1], 10) - 1;
         if (month !== lastMonth) {
-          labels.push({ label: MONTH_NAMES[month], column: c });
+          labels.push({ label: getShortMonthName(month), column: c });
           lastMonth = month;
         }
       }
@@ -133,12 +163,13 @@ export default function Heatmap(props: HeatmapProps) {
       <div class="flex" style={{ "padding-left": `${labelWidth}px` }}>
         <For each={monthLabels()}>
           {(ml, i) => {
-            const nextCol = () => {
-              const labels = monthLabels();
+            const allLabels = monthLabels();
+            const totalCols = columns().length;
+            const nextColValue = () => {
               const idx = i();
-              return idx < labels.length - 1 ? labels[idx + 1].column : columns().length;
+              return idx < allLabels.length - 1 ? allLabels[idx + 1].column : totalCols;
             };
-            const width = () => (nextCol() - ml.column) * (cellSize() + gap);
+            const width = () => (nextColValue() - ml.column) * (cellSize() + gap);
             return (
               <span
                 class="text-[9px] text-gray-400 inline-block overflow-hidden"
@@ -196,6 +227,8 @@ export default function Heatmap(props: HeatmapProps) {
                         "background-color": getIntensityColor(cell.count),
                       }}
                       title={tooltipText(cell)}
+                      aria-label={tooltipText(cell)}
+                      tabIndex={-1}
                     />
                   ) : (
                     <div
@@ -203,6 +236,7 @@ export default function Heatmap(props: HeatmapProps) {
                         width: `${cellSize()}px`,
                         height: `${cellSize()}px`,
                       }}
+                      aria-hidden="true"
                     />
                   )
                 }

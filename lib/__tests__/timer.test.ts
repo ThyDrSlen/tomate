@@ -221,11 +221,13 @@ describe('timer state machine', () => {
       completedToday: 0,
     });
 
+    // Recovery uses state.endTime as the completion timestamp so that
+    // cascading phases reflect the original alarm schedule (multi-hop detection).
     expect(recoverMissedAlarm(state, config, 3_000)).toEqual({
       ...state,
       phase: 'SHORT_BREAK',
-      startTime: 3_000,
-      endTime: 3_500,
+      startTime: 2_000,
+      endTime: 2_500,
       duration: 500,
       sessionCount: 1,
       completedToday: 1,

@@ -42,10 +42,10 @@ export const computeBestDay = (
   return { date: bestDate, count: bestCount };
 };
 
-export const computeStreak = (sessions: CompletedSession[]): number => {
+export const computeStreak = (sessions: CompletedSession[], dateSet?: Set<string>): number => {
   if (sessions.length === 0) return 0;
 
-  const sessionDates = new Set(sessions.map((s) => s.date));
+  const sessionDates = dateSet ?? new Set(sessions.map((s) => s.date));
 
   const today = new Date(Date.now());
   today.setHours(0, 0, 0, 0);

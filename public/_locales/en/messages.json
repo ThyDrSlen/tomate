@@ -1,0 +1,138 @@
+{
+  "extensionName": {
+    "message": "Tomate",
+    "description": "Extension name"
+  },
+  "extensionDescription": {
+    "message": "A Pomodoro timer that helps you focus — one tomate at a time.",
+    "description": "Extension description"
+  },
+  "phaseIdle": {
+    "message": "Ready to focus",
+    "description": "Timer phase label when idle"
+  },
+  "phaseWorking": {
+    "message": "Working",
+    "description": "Timer phase label when working"
+  },
+  "phaseShortBreak": {
+    "message": "Short Break",
+    "description": "Timer phase label during short break"
+  },
+  "phaseLongBreak": {
+    "message": "Long Break",
+    "description": "Timer phase label during long break"
+  },
+  "phaseBreakSuggestion": {
+    "message": "Time for a long break!",
+    "description": "Timer phase label when long break is suggested"
+  },
+  "settingsAriaLabel": {
+    "message": "Open settings to configure timer durations",
+    "description": "Aria label for the settings button"
+  },
+  "reconnecting": {
+    "message": "Reconnecting…",
+    "description": "Shown when service worker connection is being recovered"
+  },
+  "retry": {
+    "message": "Retry",
+    "description": "Retry button label"
+  },
+  "heatmapEmptyHint": {
+    "message": "Complete a session to see your activity",
+    "description": "Hint shown when the heatmap has no data"
+  },
+  "viewAllStats": {
+    "message": "View all stats →",
+    "description": "Link to full stats page"
+  },
+  "controlStart": {
+    "message": "Start",
+    "description": "Start timer button"
+  },
+  "controlAbandon": {
+    "message": "Abandon",
+    "description": "Abandon timer button"
+  },
+  "controlSkipBreak": {
+    "message": "Skip Break",
+    "description": "Skip break button"
+  },
+  "controlLongBreak": {
+    "message": "Long Break",
+    "description": "Accept long break button"
+  },
+  "controlSkip": {
+    "message": "Skip",
+    "description": "Skip long break button"
+  },
+  "statsTitle": {
+    "message": "Tomate Stats",
+    "description": "Title of the stats page"
+  },
+  "statLabelTotal": {
+    "message": "Total tomates",
+    "description": "Stat card label for total session count"
+  },
+  "statLabelToday": {
+    "message": "Today",
+    "description": "Stat card label for today's count"
+  },
+  "statLabelWeek": {
+    "message": "This week",
+    "description": "Stat card label for this week's count"
+  },
+  "statLabelBestDay": {
+    "message": "Best day",
+    "description": "Stat card label for best day"
+  },
+  "statLabelStreak": {
+    "message": "Current streak",
+    "description": "Stat card label for current streak"
+  },
+  "statsActivityTitle": {
+    "message": "365-day activity",
+    "description": "Heading for the 365-day heatmap section"
+  },
+  "statsExportCSV": {
+    "message": "Export CSV",
+    "description": "Export sessions as CSV button"
+  },
+  "statsNoSessions": {
+    "message": "No sessions yet",
+    "description": "Empty state heading on stats page"
+  },
+  "statsNoSessionsHint": {
+    "message": "Complete your first Pomodoro to see your stats here.",
+    "description": "Empty state hint on stats page"
+  },
+  "statsLegendLess": {
+    "message": "Less",
+    "description": "Heatmap intensity legend less end"
+  },
+  "statsLegendMore": {
+    "message": "More",
+    "description": "Heatmap intensity legend more end"
+  },
+  "notificationWorkTitle": {
+    "message": "🍅 Tomate Complete!",
+    "description": "Notification title when a work session completes"
+  },
+  "notificationShortBreakOver": {
+    "message": "Break's Over",
+    "description": "Notification title when short break ends"
+  },
+  "notificationLongBreakOver": {
+    "message": "Long Break's Over",
+    "description": "Notification title when long break ends"
+  },
+  "notificationShortBreakMessage": {
+    "message": "Ready for another tomate?",
+    "description": "Notification message when short break ends"
+  },
+  "notificationLongBreakMessage": {
+    "message": "Refreshed? Let's go!",
+    "description": "Notification message when long break ends"
+  }
+}

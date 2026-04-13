@@ -3,8 +3,9 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-solid'],
   manifest: {
-    name: 'Tomate',
-    description: 'A Pomodoro timer that helps you focus — one tomate at a time.',
+    name: '__MSG_extensionName__',
+    description: '__MSG_extensionDescription__',
+    default_locale: 'en',
     permissions: ['alarms', 'notifications', 'storage', 'tabs'],
     action: {
       default_icon: {

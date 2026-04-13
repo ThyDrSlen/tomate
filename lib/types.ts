@@ -5,7 +5,9 @@ export type TimerConfig = {
   shortBreakDuration: number;
   longBreakDuration: number;
   openBreakTab: boolean;
+  /** Play the completion sound when a work session finishes (#105) */
   playCompletionSound: boolean;
+  /** Daily tomate goal — shows celebration toast when reached (#196) */
   dailyGoal: number;
 };
 
