@@ -47,7 +47,19 @@ export const setTimerState = async (state: TimerState): Promise<void> => {
 
 export const getConfig = async (): Promise<TimerConfig> => {
   const stored = await getStoredValue<Partial<TimerConfig>>(KEYS.CONFIG);
-  return stored ? { ...DEFAULT_CONFIG, ...stored } : DEFAULT_CONFIG;
+
+  if (!stored) {
+    return DEFAULT_CONFIG;
+  }
+
+  // v1 configs are missing configVersion (and any fields added in v2+).
+  // Merge stored values on top of DEFAULT_CONFIG so every new field gets its
+  // default while any value the user already customised is preserved.
+  if (!stored.configVersion || stored.configVersion < DEFAULT_CONFIG.configVersion) {
+    return { ...DEFAULT_CONFIG, ...stored, configVersion: DEFAULT_CONFIG.configVersion };
+  }
+
+  return { ...DEFAULT_CONFIG, ...stored };
 };
 
 export const setConfig = async (config: TimerConfig): Promise<void> => {
