@@ -1,5 +1,5 @@
 import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
-import { browser } from 'wxt/browser';
+import { browser, type Browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
 import { playCelebration } from '@/lib/celebration';
@@ -33,7 +33,7 @@ export default function App() {
     setHeatmapData(await getHeatmapData(120));
   };
 
-  const onStorageChanged = (changes: Record<string, browser.storage.StorageChange>) => {
+  const onStorageChanged = (changes: Record<string, Browser.storage.StorageChange>) => {
     if ('sessions' in changes) {
       refreshStats();
     }
