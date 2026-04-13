@@ -70,8 +70,13 @@ export const getSessionHistory = async (days?: number): Promise<CompletedSession
     return [];
   }
 
-  const today = startOfLocalDay(Date.now()).getTime();
-  const earliestKey = toDateKey(today - (days - 1) * DAY_MS);
+  const todayStart = startOfLocalDay(Date.now());
+  const earliestDayStart = new Date(
+    todayStart.getFullYear(),
+    todayStart.getMonth(),
+    todayStart.getDate() - (days - 1),
+  );
+  const earliestKey = toDateKey(earliestDayStart.getTime());
 
   return sessions.filter((session) => session.date >= earliestKey);
 };

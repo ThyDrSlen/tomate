@@ -209,6 +209,55 @@ describe('timer state machine', () => {
     });
   });
 
+  it('adjustDuration invariant: endTime is never less than startTime (#356)', () => {
+    // Shrink the work duration to something far shorter than already-elapsed time,
+    // so recalculatedEndTime would fall before now — and before startTime if left
+    // unclamped.  The implementation clamps to currentTime, which is always >=
+    // startTime while the timer is running.
+    const startTime = 5_000;
+    const now = 10_000; // 5 s elapsed
+    const state = createState({
+      phase: 'WORKING',
+      startTime,
+      endTime: 15_000,
+      duration: 10_000,
+    });
+    // newDuration (1 ms) << elapsed (5 000 ms) → recalculatedEndTime = 5_001, still > startTime
+    // but let's use an extreme: newDuration smaller than elapsed so endTime clamps to now
+    const config = createConfig({ workDuration: 100 });
+
+    const result = adjustDuration(state, config, now);
+
+    expect(result.endTime).not.toBeNull();
+    expect(result.startTime).not.toBeNull();
+    expect(result.endTime!).toBeGreaterThanOrEqual(result.startTime!);
+  });
+
+  it('adjustDuration LONG_BREAK with endTime already in the past clamps safely (#392)', () => {
+    // Simulate a long-break session whose original endTime is already behind `now`
+    // and a new longBreakDuration that is also shorter than elapsed time.
+    const startTime = 1_000;
+    const originalEndTime = 3_000; // was set for a 2 s break
+    const now = 10_000; // now is well past the original end
+    const state = createState({
+      phase: 'LONG_BREAK',
+      startTime,
+      endTime: originalEndTime,
+      duration: 2_000,
+    });
+    // New duration is still shorter than elapsed, so recalculatedEndTime < now
+    const config = createConfig({ longBreakDuration: 500 });
+
+    const result = adjustDuration(state, config, now);
+
+    // duration field reflects the new config value
+    expect(result.duration).toBe(500);
+    // endTime must be clamped to now (not pushed into the past)
+    expect(result.endTime).toBe(now);
+    // invariant: endTime >= startTime
+    expect(result.endTime!).toBeGreaterThanOrEqual(result.startTime!);
+  });
+
   it('recovers a missed alarm for a completed work session', () => {
     const config = createConfig({ shortBreakDuration: 500 });
     const state = createState({

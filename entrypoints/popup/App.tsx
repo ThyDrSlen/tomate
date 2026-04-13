@@ -34,8 +34,8 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' }).catch(() => null);
+    if (currentState) setState(currentState as TimerState);
 
     const config = await getConfig();
     setDailyGoal(config.dailyGoal);
@@ -100,6 +100,7 @@ export default function App() {
   };
 
   let labelTimeout: ReturnType<typeof setTimeout>;
+  onCleanup(() => clearTimeout(labelTimeout));
   const handleLabelChange = (value: string) => {
     setLabel(value);
     clearTimeout(labelTimeout);
