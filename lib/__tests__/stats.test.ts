@@ -13,6 +13,8 @@ const makeSession = (date: string, id = date): CompletedSession => ({
 });
 
 // Compute date keys relative to actual today so tests are always valid
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const dateKey = (daysAgo: number): string => {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -61,10 +63,10 @@ describe('computeWeekCount', () => {
 
   it('counts only sessions within the 7-day window', () => {
     const sessions = [
-      makeSession(dateKey(7), 'outside'), // 7 days ago — excluded
-      makeSession(dateKey(6), 'border'),  // 6 days ago — included
-      makeSession(dateKey(3), 'mid'),     // 3 days ago — included
-      makeSession(dateKey(0), 'today'),   // today — included
+      makeSession(dateKey(7), 'outside'),  // 7 days ago — excluded
+      makeSession(dateKey(6), 'border'),   // 6 days ago — included
+      makeSession(dateKey(3), 'mid'),      // 3 days ago — included
+      makeSession(dateKey(0), 'today'),    // today — included
     ];
     expect(computeWeekCount(sessions)).toBe(3);
   });
@@ -95,6 +97,7 @@ describe('computeBestDay', () => {
   });
 
   it('returns the first-encountered date on a tie (stable tie-breaking)', () => {
+    // Two dates with 2 sessions each — the one that appears first in iteration wins
     const sessions = [
       makeSession('2026-04-04', 'a1'),
       makeSession('2026-04-04', 'a2'),
@@ -103,6 +106,7 @@ describe('computeBestDay', () => {
     ];
     const result = computeBestDay(sessions);
     expect(result?.count).toBe(2);
+    // Both dates are valid winners; implementation keeps the first one encountered
     expect(['2026-04-04', '2026-04-05']).toContain(result?.date);
   });
 });
@@ -126,6 +130,7 @@ describe('computeStreak', () => {
   });
 
   it('returns 0 when the streak is broken (gap yesterday, only older sessions)', () => {
+    // Session 2 days ago but nothing yesterday or today — streak is 0
     const sessions = [makeSession(dateKey(2))];
     expect(computeStreak(sessions)).toBe(0);
   });
@@ -140,6 +145,7 @@ describe('computeStreak', () => {
   });
 
   it('stops the streak at the first gap', () => {
+    // Today, yesterday, skip day 2, then day 3
     const sessions = [
       makeSession(dateKey(0), 'a'),
       makeSession(dateKey(1), 'b'),
