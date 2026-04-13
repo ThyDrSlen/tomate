@@ -236,6 +236,60 @@ describe('timer state machine', () => {
     expect(recoverMissedAlarm(createState(), DEFAULT_CONFIG, 5_000)).toBeNull();
   });
 
+  it('recovers a missed alarm for a completed SHORT_BREAK and transitions to IDLE', () => {
+    const state = createState({
+      phase: 'SHORT_BREAK',
+      startTime: 1_000,
+      endTime: 1_500,
+      duration: 500,
+      sessionCount: 1,
+      cyclePosition: 0,
+      completedToday: 1,
+    });
+
+    expect(recoverMissedAlarm(state, DEFAULT_CONFIG, 3_000)).toEqual(
+      createState({
+        sessionCount: 1,
+        cyclePosition: 1,
+        completedToday: 1,
+      }),
+    );
+  });
+
+  it('recovers a missed alarm for a completed LONG_BREAK and resets cyclePosition to 0', () => {
+    const state = createState({
+      phase: 'LONG_BREAK',
+      startTime: 1_000,
+      endTime: 3_000,
+      duration: 2_000,
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+
+    expect(recoverMissedAlarm(state, DEFAULT_CONFIG, 5_000)).toEqual(
+      createState({
+        sessionCount: 4,
+        cyclePosition: 0,
+        completedToday: 4,
+      }),
+    );
+  });
+
+  it('returns null for a SHORT_BREAK whose endTime is still in the future', () => {
+    const state = createState({
+      phase: 'SHORT_BREAK',
+      startTime: 1_000,
+      endTime: 10_000,
+      duration: 9_000,
+      sessionCount: 1,
+      cyclePosition: 0,
+      completedToday: 1,
+    });
+
+    expect(recoverMissedAlarm(state, DEFAULT_CONFIG, 5_000)).toBeNull();
+  });
+
   it('returns correct remaining milliseconds', () => {
     const state = createState({ endTime: 10_000 });
 
