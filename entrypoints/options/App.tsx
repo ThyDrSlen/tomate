@@ -90,8 +90,11 @@ export default function App() {
               max={120}
               value={work()}
               onInput={(e) => setWork(Number(e.currentTarget.value))}
+              aria-describedby="work-hint"
+              aria-invalid={!isValidWork(work())}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+            <span id="work-hint" class="text-xs text-gray-500">1–120 minutes</span>
           </label>
 
           <label class="block">
@@ -102,8 +105,11 @@ export default function App() {
               max={30}
               value={shortBreak()}
               onInput={(e) => setShortBreak(Number(e.currentTarget.value))}
+              aria-describedby="short-break-hint"
+              aria-invalid={!isValidShortBreak(shortBreak())}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+            <span id="short-break-hint" class="text-xs text-gray-500">1–30 minutes</span>
           </label>
 
           <label class="block">
@@ -114,8 +120,11 @@ export default function App() {
               max={60}
               value={longBreak()}
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
+              aria-describedby="long-break-hint"
+              aria-invalid={!isValidLongBreak(longBreak())}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+            <span id="long-break-hint" class="text-xs text-gray-500">5–60 minutes</span>
           </label>
 
           <label class="flex items-center gap-3 cursor-pointer">
@@ -157,9 +166,11 @@ export default function App() {
             Reset to defaults
           </button>
 
-          <Show when={saved()}>
-            <span class="text-sm text-green-600">Settings saved ✓</span>
-          </Show>
+          <span aria-live="polite" aria-atomic="true">
+            <Show when={saved()}>
+              <span class="text-sm text-green-600">Settings saved ✓</span>
+            </Show>
+          </span>
         </div>
 
         <Show when={error()}>
