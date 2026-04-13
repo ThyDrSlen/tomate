@@ -286,6 +286,52 @@ describe('background service worker', () => {
     );
   });
 
+  it('opens a tab when a WORKING session completes and openBreakTab is true (#269)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    // Persist openBreakTab = true into storage before background initialises
+    const { setConfig } = await import('@/lib/storage');
+    await setConfig(createConfig({ openBreakTab: true }));
+    await initBackground();
+
+    fakeBrowser.tabs.create = vi.fn().mockResolvedValue({ id: 1 });
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(fakeBrowser.tabs.create).toHaveBeenCalledOnce();
+    expect(fakeBrowser.tabs.create).toHaveBeenCalledWith(
+      expect.objectContaining({ url: expect.stringContaining('stats') }),
+    );
+  });
+
+  it('does NOT open a tab when a WORKING session completes and openBreakTab is false (#269)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 4_000,
+        duration: 3_000,
+      }),
+    );
+    const { setConfig } = await import('@/lib/storage');
+    await setConfig(createConfig({ openBreakTab: false }));
+    await initBackground();
+
+    fakeBrowser.tabs.create = vi.fn().mockResolvedValue({ id: 1 });
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+    expect(fakeBrowser.tabs.create).not.toHaveBeenCalled();
+  });
+
   it('applies blocking rules on startup when phase is WORKING and blocked sites are configured (#371)', async () => {
     // Freeze time so the timer has not yet elapsed; recoverFromMissedAlarm will
     // find no missed alarm and leave the phase as WORKING, after which
