@@ -4,6 +4,7 @@ import { fakeBrowser } from 'wxt/testing';
 vi.mock('wxt/browser', () => ({ browser: fakeBrowser }));
 
 import {
+  addCompletedSession,
   getConfig,
   getPendingCelebration,
   getSessionHistory,
@@ -241,6 +242,80 @@ describe('background service worker', () => {
     await initBackground();
 
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
+  });
+
+  it('onStartup: recovers a single missed working alarm without duplicating the session (#390)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(20_000);
+    await setCurrentLabel('Startup recovery');
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 5_000,
+        endTime: 10_000,
+        duration: 5_000,
+      }),
+    );
+    await initBackground();
+
+    // Trigger onStartup — the timer alarm was missed while the browser was closed
+    await fakeBrowser.runtime.onStartup.trigger(undefined as never);
+
+    const state = await getTimerState();
+    // Single-hop recovery: WORKING → SHORT_BREAK
+    expect(state.phase).toBe('SHORT_BREAK');
+    expect(state.sessionCount).toBe(1);
+    expect(state.completedToday).toBe(1);
+
+    // Exactly one session persisted — no duplicate from a race
+    const history = await getSessionHistory();
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      label: 'Startup recovery',
+      startTime: 5_000,
+      duration: 5_000,
+    });
+
+    // Celebration flag set
+    await expect(getPendingCelebration()).resolves.toBe(true);
+
+    // New timer alarm scheduled for the break end
+    const alarm = await fakeBrowser.alarms.get('tomate-timer');
+    expect(alarm?.scheduledTime).toBe(state.endTime);
+  });
+
+  it('ALARM_BADGE_REFRESH: fires badge refresh and calls setBadgeText with today\'s session count (#391)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(30_000);
+    const todayKey = toDateKey(30_000);
+
+    // Seed two completed sessions so getTodayCount returns 2
+    await addCompletedSession({
+      id: 'test-id-1',
+      label: 'Session A',
+      startTime: 1_000,
+      endTime: 2_000,
+      date: todayKey,
+      duration: 1_000,
+    });
+    await addCompletedSession({
+      id: 'test-id-2',
+      label: 'Session B',
+      startTime: 3_000,
+      endTime: 4_000,
+      date: todayKey,
+      duration: 1_000,
+    });
+
+    // Timer is IDLE
+    await setTimerState(createState({ phase: 'IDLE', completedToday: 2 }));
+    await initBackground();
+
+    // Clear calls from initBackground so we only see the badge-refresh alarm call
+    vi.mocked(fakeBrowser.action.setBadgeText).mockClear();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 30_000 });
+
+    // IDLE phase with todayCount > 0: badge shows the count as a string
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: '2' });
   });
 
   it('updates config during an active timer and recreates the timer alarm', async () => {
