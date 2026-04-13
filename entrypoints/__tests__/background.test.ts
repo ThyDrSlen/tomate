@@ -243,6 +243,88 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
+  it('completes a full 4-session Pomodoro cycle: SHORT_BREAK for sessions 1–3, LONG_BREAK on session 4', async () => {
+    let clock = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => clock);
+
+    await initBackground();
+
+    // Helper: start a working session and fire the working alarm.
+    const runWorkingSession = async (): Promise<void> => {
+      clock += 1_000;
+      await fakeBrowser.runtime.sendMessage({ action: 'START_TIMER' });
+
+      const workState = await getTimerState();
+      clock = workState.endTime!;
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: workState.endTime! });
+    };
+
+    // Helper: fire the break alarm for whatever break phase is active.
+    const runBreakAlarm = async (): Promise<void> => {
+      const breakState = await getTimerState();
+      clock = breakState.endTime!;
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: breakState.endTime! });
+    };
+
+    // --- Session 1 (cyclePosition 0 → SHORT_BREAK) ---
+    await runWorkingSession();
+    let state = await getTimerState();
+    expect(state.phase).toBe('SHORT_BREAK');
+    expect(state.completedToday).toBe(1);
+    expect(state.cyclePosition).toBe(0);
+
+    await runBreakAlarm();
+    state = await getTimerState();
+    expect(state.phase).toBe('IDLE');
+    expect(state.cyclePosition).toBe(1);
+    expect(state.completedToday).toBe(1);
+
+    // --- Session 2 (cyclePosition 1 → SHORT_BREAK) ---
+    await runWorkingSession();
+    state = await getTimerState();
+    expect(state.phase).toBe('SHORT_BREAK');
+    expect(state.completedToday).toBe(2);
+
+    await runBreakAlarm();
+    state = await getTimerState();
+    expect(state.phase).toBe('IDLE');
+    expect(state.cyclePosition).toBe(2);
+    expect(state.completedToday).toBe(2);
+
+    // --- Session 3 (cyclePosition 2 → SHORT_BREAK) ---
+    await runWorkingSession();
+    state = await getTimerState();
+    expect(state.phase).toBe('SHORT_BREAK');
+    expect(state.completedToday).toBe(3);
+
+    await runBreakAlarm();
+    state = await getTimerState();
+    expect(state.phase).toBe('IDLE');
+    expect(state.cyclePosition).toBe(3);
+    expect(state.completedToday).toBe(3);
+
+    // --- Session 4 (cyclePosition 3 → BREAK_SUGGESTION, not SHORT_BREAK) ---
+    await runWorkingSession();
+    state = await getTimerState();
+    expect(state.phase).toBe('BREAK_SUGGESTION');
+    expect(state.completedToday).toBe(4);
+    expect(state.cyclePosition).toBe(3);
+
+    // Accept the long break and verify LONG_BREAK phase is entered.
+    clock += 1_000;
+    await fakeBrowser.runtime.sendMessage({ action: 'ACCEPT_LONG_BREAK' });
+    state = await getTimerState();
+    expect(state.phase).toBe('LONG_BREAK');
+
+    // Complete the long break and verify cycle resets.
+    clock = state.endTime!;
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: state.endTime! });
+    state = await getTimerState();
+    expect(state.phase).toBe('IDLE');
+    expect(state.cyclePosition).toBe(0);
+    expect(state.completedToday).toBe(4);
+  });
+
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });
