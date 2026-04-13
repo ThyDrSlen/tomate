@@ -1,9 +1,21 @@
-import { createResource, For, Show } from 'solid-js';
+import { createResource, createSignal, createMemo, For, Show } from 'solid-js';
 
 import { getConfig, getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
 
 import Heatmap from '@/components/Heatmap';
+
+const SESSION_PAGE_SIZE = 50;
+
+function formatDuration(ms: number): string {
+  const mins = Math.round(ms / 60000);
+  return `${mins} min`;
+}
+
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 const INTENSITY_LEGEND = [
   { color: '#F3F4F6', label: '0' },
@@ -58,6 +70,17 @@ export default function App() {
   const week = () => computeWeekCount(sessions() ?? []);
   const bestDay = () => computeBestDay(sessions() ?? []);
   const streak = () => computeStreak(sessions() ?? []);
+
+  const [showAll, setShowAll] = createSignal(false);
+
+  const sortedSessions = createMemo(() =>
+    [...(sessions() ?? [])].sort((a, b) => b.startTime - a.startTime),
+  );
+
+  const visibleSessions = createMemo(() => {
+    const all = sortedSessions();
+    return showAll() ? all : all.slice(0, SESSION_PAGE_SIZE);
+  });
 
   return (
     <div class="min-h-screen bg-red-50 py-10 px-4">
@@ -133,6 +156,49 @@ export default function App() {
               </For>
               <span>More</span>
             </div>
+          </div>
+
+          <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100 mt-6">
+            <h2 class="text-sm font-semibold text-gray-700 mb-3">Session history</h2>
+            <Show
+              when={sortedSessions().length > 0}
+              fallback={
+                <p class="text-sm text-gray-400 text-center py-4">No sessions to display.</p>
+              }
+            >
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="border-b border-red-100">
+                      <th class="text-left py-2 pr-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+                      <th class="text-left py-2 pr-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Label</th>
+                      <th class="text-right py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={visibleSessions()}>
+                      {(session) => (
+                        <tr class="border-b border-red-50 last:border-0 hover:bg-red-50 transition-colors">
+                          <td class="py-2 pr-4 text-gray-700 whitespace-nowrap">{formatDate(session.date)}</td>
+                          <td class="py-2 pr-4 text-gray-700 truncate max-w-[200px]">{session.label || '—'}</td>
+                          <td class="py-2 text-right text-red-600 font-medium whitespace-nowrap">{formatDuration(session.duration)}</td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+              </div>
+              <Show when={sortedSessions().length > SESSION_PAGE_SIZE && !showAll()}>
+                <div class="mt-3 text-center">
+                  <button
+                    class="text-sm px-4 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-100 transition-colors"
+                    onClick={() => setShowAll(true)}
+                  >
+                    Show all {sortedSessions().length} sessions
+                  </button>
+                </div>
+              </Show>
+            </Show>
           </div>
         </Show>
       </div>
