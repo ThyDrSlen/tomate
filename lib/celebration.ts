@@ -26,7 +26,7 @@ const CONFETTI_CONFIGS: Record<string, confetti.Options> = {
 };
 
 export const playCelebration = (type: 'work' | 'milestone' | 'break', playSound = true): void => {
-  confetti(CONFETTI_CONFIGS[type]).then(() => confetti.reset());
+  void confetti(CONFETTI_CONFIGS[type])?.then(() => confetti.reset());
 
   if (playSound) {
     try {
