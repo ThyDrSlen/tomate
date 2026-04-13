@@ -275,9 +275,9 @@ export default defineBackground(() => {
       const windows = await browser.windows.getAll();
       if (windows.length > 0) {
         try {
-          await browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') });
+          await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
         } catch (err) {
-          console.error('[tomate] Failed to open stats tab:', err);
+          console.warn('[tomate] browser.tabs.create() failed (no open window?):', err);
         }
       }
     }
