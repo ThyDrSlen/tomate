@@ -32,6 +32,7 @@ const buildConfig = (
   extra: Partial<TimerConfig> = {},
 ): TimerConfig => ({
   dailyGoal: DEFAULT_CONFIG.dailyGoal,
+  blockedSites: DEFAULT_CONFIG.blockedSites,
   ...extra,
   workDuration: work * MS_PER_MINUTE,
   shortBreakDuration: shortBreak * MS_PER_MINUTE,
