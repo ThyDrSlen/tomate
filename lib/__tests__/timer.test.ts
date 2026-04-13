@@ -221,7 +221,11 @@ describe('timer state machine', () => {
       completedToday: 0,
     });
 
-    expect(recoverMissedAlarm(state, config, 3_000)).toEqual({
+    const recoverTime = 3_000;
+    const d = new Date(recoverTime);
+    const expectedLastWorkDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    expect(recoverMissedAlarm(state, config, recoverTime)).toEqual({
       ...state,
       phase: 'SHORT_BREAK',
       startTime: 3_000,
@@ -229,7 +233,7 @@ describe('timer state machine', () => {
       duration: 500,
       sessionCount: 1,
       completedToday: 1,
-      lastWorkDate: '1969-12-31',
+      lastWorkDate: expectedLastWorkDate,
     });
   });
 
