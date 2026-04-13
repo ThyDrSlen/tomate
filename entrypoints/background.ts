@@ -99,7 +99,9 @@ export default defineBackground(() => {
     endTime: number,
   ): Promise<void> => {
     if (state.startTime === null || state.duration === null) {
-      return;
+      throw new Error(
+        `persistCompletedSession: startTime (${state.startTime}) or duration (${state.duration}) is null — cannot persist session`,
+      );
     }
 
     const label = await getCurrentLabel();
