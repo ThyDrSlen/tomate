@@ -261,4 +261,67 @@ describe('timer state machine', () => {
     expect(isActivePhase('IDLE')).toBe(false);
     expect(isActivePhase('BREAK_SUGGESTION')).toBe(false);
   });
+
+  it('startTimer returns state unchanged when called from a non-IDLE phase', () => {
+    const config = createConfig();
+    const now = 5_000;
+
+    const workingState = createState({
+      phase: 'WORKING',
+      startTime: 1_000,
+      endTime: 2_000,
+      duration: 1_000,
+    });
+    expect(startTimer(workingState, config, now)).toBe(workingState);
+
+    const shortBreakState = createState({
+      phase: 'SHORT_BREAK',
+      startTime: 2_000,
+      endTime: 2_500,
+      duration: 500,
+    });
+    expect(startTimer(shortBreakState, config, now)).toBe(shortBreakState);
+
+    const longBreakState = createState({
+      phase: 'LONG_BREAK',
+      startTime: 3_000,
+      endTime: 5_000,
+      duration: 2_000,
+    });
+    expect(startTimer(longBreakState, config, now)).toBe(longBreakState);
+
+    const breakSuggestionState = createState({
+      phase: 'BREAK_SUGGESTION',
+      sessionCount: 4,
+      cyclePosition: 3,
+    });
+    expect(startTimer(breakSuggestionState, config, now)).toBe(breakSuggestionState);
+  });
+
+  it('completeTimer returns state unchanged from IDLE and BREAK_SUGGESTION (default branch)', () => {
+    const config = createConfig();
+    const now = 5_000;
+
+    const idleState = createState();
+    expect(completeTimer(idleState, config, now)).toBe(idleState);
+
+    const breakSuggestionState = createState({
+      phase: 'BREAK_SUGGESTION',
+      sessionCount: 4,
+      cyclePosition: 3,
+    });
+    expect(completeTimer(breakSuggestionState, config, now)).toBe(breakSuggestionState);
+  });
+
+  it('abandonTimer returns state unchanged when called from a non-active phase', () => {
+    const idleState = createState();
+    expect(abandonTimer(idleState)).toBe(idleState);
+
+    const breakSuggestionState = createState({
+      phase: 'BREAK_SUGGESTION',
+      sessionCount: 4,
+      cyclePosition: 3,
+    });
+    expect(abandonTimer(breakSuggestionState)).toBe(breakSuggestionState);
+  });
 });
