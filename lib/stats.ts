@@ -14,10 +14,10 @@ export const computeTotalCount = (sessions: CompletedSession[]): number => sessi
 export const computeWeekCount = (sessions: CompletedSession[]): number => {
   const today = new Date(Date.now());
   today.setHours(0, 0, 0, 0);
-  const weekAgo = new Date(today.getTime() - 7 * DAY_MS);
+  const weekAgo = new Date(today.getTime() - 6 * DAY_MS);
   const cutoff = toDateKey(weekAgo);
 
-  return sessions.filter((s) => s.date > cutoff).length;
+  return sessions.filter((s) => s.date >= cutoff).length;
 };
 
 export const computeBestDay = (
