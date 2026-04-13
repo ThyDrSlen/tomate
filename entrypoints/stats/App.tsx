@@ -42,7 +42,7 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
   a.href = url;
   a.download = `tomate-sessions-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
 export default function App() {
@@ -89,7 +89,7 @@ export default function App() {
             <StatCard
               label="Best day"
               value={bestDay()?.count ?? '—'}
-              sublabel={bestDay()?.date}
+              sublabel={bestDay() != null ? bestDay()!.date : undefined}
             />
             <StatCard
               label="Current streak"
