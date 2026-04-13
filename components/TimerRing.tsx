@@ -30,8 +30,8 @@ export default function TimerRing(props: TimerRingProps) {
         cy={SIZE / 2}
         r={RADIUS}
         fill="none"
-        stroke="#E5E7EB"
         stroke-width={STROKE}
+        class="stroke-gray-200 dark:stroke-gray-700"
       />
       <circle
         cx={SIZE / 2}

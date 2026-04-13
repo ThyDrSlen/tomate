@@ -107,13 +107,13 @@ export default function App() {
   };
 
   return (
-    <div class="w-[360px] min-h-[400px] bg-red-50 p-4 flex flex-col items-center">
+    <div class="w-[360px] min-h-[400px] bg-red-50 dark:bg-gray-900 p-4 flex flex-col items-center">
       <div class="w-full flex justify-between items-center mb-4">
         <h1 class="text-xl font-bold text-red-600">Tomate</h1>
         <button
           type="button"
           onClick={() => browser.runtime.openOptionsPage()}
-          class="text-gray-400 hover:text-gray-600 text-lg"
+          class="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-lg"
           aria-label="Settings"
         >
           ⚙️
@@ -121,9 +121,9 @@ export default function App() {
       </div>
 
       <TimerRing progress={progress()} phase={state().phase} />
-      <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
+      <div class="text-4xl font-mono font-bold text-gray-800 dark:text-gray-100 mt-2">{formatTime()}</div>
 
-      <div class="text-sm text-gray-500 mt-1">
+      <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
         <Switch>
           <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
           <Match when={state().phase === 'WORKING'}>Working</Match>
