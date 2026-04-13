@@ -29,10 +29,15 @@ function StatCard(props: StatCardProps) {
   );
 }
 
+const sanitizeCSVCell = (val: string): string => {
+  const s = String(val);
+  return /^[=+\-@]/.test(s) ? `'${s}` : s;
+};
+
 function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
   const header = 'startTime,endTime,duration,label';
   const rows = sessions.map((s) => {
-    const label = `"${s.label.replace(/"/g, '""')}"`;
+    const label = `"${sanitizeCSVCell(s.label).replace(/"/g, '""')}"`;
     return `${s.startTime},${s.endTime},${s.duration},${label}`;
   });
   const csv = [header, ...rows].join('\n');
