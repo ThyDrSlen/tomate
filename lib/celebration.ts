@@ -29,7 +29,9 @@ export const playCelebration = (type: 'work' | 'milestone' | 'break', playSound 
     try {
       new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html'))
         .play()
-        .catch(() => {});
+        .catch((err) => {
+          console.warn('[tomate] celebration audio playback failed:', err);
+        });
     } catch {
       // Audio constructor can throw in non-browser environments
     }

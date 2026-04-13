@@ -1,4 +1,4 @@
-import { For, createMemo } from 'solid-js';
+import { For, createMemo, Show } from 'solid-js';
 
 type HeatmapProps = {
   data: Record<string, number>;
@@ -12,12 +12,13 @@ type HeatmapCell = {
   dayOfWeek: number;
 };
 
-const INTENSITY_COLORS = [
-  '#F3F4F6',
-  '#FCA5A5',
-  '#EF4444',
-  '#DC2626',
-  '#991B1B',
+/** Tailwind classes for each intensity level — supports dark: variants */
+const INTENSITY_CLASSES = [
+  'bg-gray-100 dark:bg-gray-700',
+  'bg-red-300 dark:bg-red-900',
+  'bg-red-400 dark:bg-red-700',
+  'bg-red-600 dark:bg-red-500',
+  'bg-red-800 dark:bg-red-400',
 ] as const;
 
 const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''] as const;
@@ -27,12 +28,12 @@ const MONTH_NAMES = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ] as const;
 
-const getIntensityColor = (count: number): string => {
-  if (count === 0) return INTENSITY_COLORS[0];
-  if (count === 1) return INTENSITY_COLORS[1];
-  if (count <= 3) return INTENSITY_COLORS[2];
-  if (count <= 5) return INTENSITY_COLORS[3];
-  return INTENSITY_COLORS[4];
+const getIntensityClass = (count: number): string => {
+  if (count === 0) return INTENSITY_CLASSES[0];
+  if (count === 1) return INTENSITY_CLASSES[1];
+  if (count <= 3) return INTENSITY_CLASSES[2];
+  if (count <= 5) return INTENSITY_CLASSES[3];
+  return INTENSITY_CLASSES[4];
 };
 
 const toDateKey = (date: Date): string => {
@@ -65,6 +66,7 @@ const generateHeatmapGrid = (
 };
 
 type MonthLabel = { label: string; column: number };
+type YearLabel = { year: number; column: number };
 
 export default function Heatmap(props: HeatmapProps) {
   const cellSize = () => props.cellSize ?? 12;
@@ -119,6 +121,28 @@ export default function Heatmap(props: HeatmapProps) {
     return labels;
   });
 
+  const yearLabels = createMemo((): YearLabel[] => {
+    const cols = columns();
+    const labels: YearLabel[] = [];
+    let lastYear = -1;
+
+    for (let c = 0; c < cols.length; c++) {
+      const firstCell = cols[c].find((cell) => cell !== null);
+      if (firstCell) {
+        const year = Number.parseInt(firstCell.date.split('-')[0], 10);
+        if (year !== lastYear) {
+          labels.push({ year, column: c });
+          lastYear = year;
+        }
+      }
+    }
+
+    // Only show year labels if the grid spans more than one year
+    return labels.length > 1 ? labels : [];
+  });
+
+  const multiYear = () => yearLabels().length > 1;
+
   const tooltipText = (cell: HeatmapCell) => {
     const count = cell.count;
     const label = count === 0 ? 'No tomates' : `${count} tomate${count !== 1 ? 's' : ''}`;
@@ -129,6 +153,30 @@ export default function Heatmap(props: HeatmapProps) {
 
   return (
     <div class="w-full overflow-x-auto">
+      {/* Year labels — only rendered when heatmap spans multiple calendar years */}
+      <Show when={multiYear()}>
+        <div class="flex mb-0.5" style={{ "padding-left": `${labelWidth}px` }}>
+          <For each={yearLabels()}>
+            {(yl, i) => {
+              const nextCol = () => {
+                const labels = yearLabels();
+                const idx = i();
+                return idx < labels.length - 1 ? labels[idx + 1].column : columns().length;
+              };
+              const width = () => (nextCol() - yl.column) * (cellSize() + gap);
+              return (
+                <span
+                  class="text-[9px] font-semibold text-red-400 inline-block overflow-hidden"
+                  style={{ width: `${width()}px`, "min-width": `${width()}px` }}
+                >
+                  {yl.year}
+                </span>
+              );
+            }}
+          </For>
+        </div>
+      </Show>
+
       {/* Month labels */}
       <div class="flex" style={{ "padding-left": `${labelWidth}px` }}>
         <For each={monthLabels()}>
@@ -189,11 +237,10 @@ export default function Heatmap(props: HeatmapProps) {
                 {(cell) =>
                   cell ? (
                     <div
-                      class="rounded-sm"
+                      class={`rounded-sm ${getIntensityClass(cell.count)}`}
                       style={{
                         width: `${cellSize()}px`,
                         height: `${cellSize()}px`,
-                        "background-color": getIntensityColor(cell.count),
                       }}
                       title={tooltipText(cell)}
                     />

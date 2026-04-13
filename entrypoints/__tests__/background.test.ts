@@ -273,4 +273,165 @@ describe('background service worker', () => {
       }),
     );
   });
+
+  // #177 — reschedulePendingTimer and onInstalled reason tests
+  describe('onInstalled reason routing (#177)', () => {
+    it('reschedules active WORKING timer on update reason', async () => {
+      const endTime = Date.now() + 10_000; // future
+      vi.spyOn(Date, 'now').mockReturnValue(endTime - 10_000);
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: endTime - 10_000,
+          endTime,
+          duration: 10_000,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
+
+      // Should have recreated the timer alarm at the original endTime
+      const alarm = await fakeBrowser.alarms.get('tomate-timer');
+      expect(alarm?.scheduledTime).toBe(endTime);
+    });
+
+    it('reschedules active SHORT_BREAK timer on chrome_update reason', async () => {
+      const endTime = Date.now() + 5_000;
+      vi.spyOn(Date, 'now').mockReturnValue(endTime - 5_000);
+      await setTimerState(
+        createState({
+          phase: 'SHORT_BREAK',
+          startTime: endTime - 5_000,
+          endTime,
+          duration: 5_000,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'chrome_update', temporary: false } as never);
+
+      const alarm = await fakeBrowser.alarms.get('tomate-timer');
+      expect(alarm?.scheduledTime).toBe(endTime);
+    });
+
+    it('calls recoverFromMissedAlarm for install reason (fresh install)', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(10_000);
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 2_000, // already expired
+          duration: 1_000,
+        }),
+      );
+      await initBackground();
+
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install', temporary: false } as never);
+
+      // Recovery should have advanced to SHORT_BREAK
+      const state = await getTimerState();
+      expect(state.phase).toBe('SHORT_BREAK');
+    });
+
+    it('reschedulePendingTimer falls back to recovery when timer is expired', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(50_000);
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 2_000, // expired
+          duration: 1_000,
+        }),
+      );
+      await initBackground();
+
+      // 'update' reason with expired timer → should recover
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
+
+      const state = await getTimerState();
+      expect(state.phase).toBe('SHORT_BREAK');
+    });
+
+    it('reschedulePendingTimer falls back to recovery when in IDLE state', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(10_000);
+      // IDLE state — no timer to reschedule
+      await initBackground();
+
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
+
+      // Should remain IDLE (recovery from IDLE is a no-op)
+      const state = await getTimerState();
+      expect(state.phase).toBe('IDLE');
+    });
+  });
+
+  // #179 — onAlarm try/catch and error badge tests
+  describe('onAlarm error handling (#179)', () => {
+    it('sets error badge when onAlarm throws an unexpected error', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(5_000);
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 4_000,
+          duration: 3_000,
+        }),
+      );
+      await initBackground();
+
+      // Make getTimerState throw to simulate alarm handler error
+      // We'll trigger the alarm on an unexpected internal error path
+      // by making completeTimer throw through setTimerState
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      // Simulate an error during alarm processing by corrupting storage read
+      vi.spyOn(fakeBrowser.storage.local, 'get').mockRejectedValueOnce(new Error('storage read failed'));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+      // Should have set error badge
+      expect(fakeBrowser.action.setBadgeText).toHaveBeenCalledWith({ text: '!' });
+      expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenCalledWith({ color: '#DC2626' });
+      expect(consoleSpy).toHaveBeenCalledWith('[tomate] onAlarm error:', expect.any(Error));
+    });
+
+    it('badge-refresh alarm only loads state, not config', async () => {
+      await initBackground();
+
+      const getSpy = vi.spyOn(fakeBrowser.storage.local, 'get');
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 0 });
+
+      // Should have loaded timerState and sessions (for todayCount), not config
+      const keys = getSpy.mock.calls.flatMap((call: [string | string[], ...unknown[]]) => {
+        const arg = call[0];
+        return Array.isArray(arg) ? arg : [arg];
+      });
+      expect(keys).not.toContain('config');
+    });
+
+    it('notification error during WORKING phase does not stop timer processing', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(5_000);
+      await setTimerState(
+        createState({
+          phase: 'WORKING',
+          startTime: 1_000,
+          endTime: 4_000,
+          duration: 3_000,
+        }),
+      );
+      await initBackground();
+
+      // Make notifications.create throw
+      vi.spyOn(fakeBrowser.notifications, 'create').mockRejectedValueOnce(new Error('notifications unavailable'));
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: 'tomate-timer', scheduledTime: 4_000 });
+
+      // Timer state should still advance despite notification failure
+      const state = await getTimerState();
+      expect(state.phase).toBe('SHORT_BREAK');
+    });
+  });
 });

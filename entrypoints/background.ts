@@ -116,19 +116,51 @@ export default defineBackground(() => {
     await setPendingCelebration(true);
   };
 
-  const recoverFromMissedAlarm = async (): Promise<void> => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const recovered = recoverMissedAlarm(state, config);
+  const reschedulePendingTimer = async (): Promise<void> => {
+    const state = await getTimerState();
+    const now = Date.now();
 
-    if (!recovered) {
+    if (isActivePhase(state.phase) && state.endTime !== null && state.endTime > now) {
+      // Timer is still live — just recreate the alarm
+      await scheduleTimerAlarm(state.endTime);
+      await startBadgeRefresh();
       await refreshBadge();
       return;
     }
 
+    // Timer expired or no active timer — fall back to full recovery
+    await recoverFromMissedAlarm();
+  };
+
+  const recoverFromMissedAlarm = async (): Promise<void> => {
+    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    const steps = recoverMissedAlarm(state, config);
+
+    if (steps.length === 0) {
+      await refreshBadge();
+      return;
+    }
+
+    const now = Date.now();
+    const rawRecovered = steps[steps.length - 1].after;
+
+    // Re-anchor the recovered state's start/end to the actual current time so
+    // break timers begin from "now" rather than from when the working phase ended.
+    let recovered = rawRecovered;
+    if (isActivePhase(rawRecovered.phase) && rawRecovered.duration !== null) {
+      recovered = {
+        ...rawRecovered,
+        startTime: now,
+        endTime: now + rawRecovered.duration,
+      };
+    }
+
     await setTimerState(recovered);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
+    for (const step of steps) {
+      if (step.before.phase === 'WORKING') {
+        await persistCompletedSession(step.before, Date.now());
+      }
     }
 
     if (recovered.phase === 'SHORT_BREAK' && recovered.endTime !== null) {
@@ -142,68 +174,73 @@ export default defineBackground(() => {
   };
 
   const handleMessage = async (message: MessageAction) => {
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+    try {
+      const [state, config] = await Promise.all([getTimerState(), getConfig()]);
 
-    switch (message.action) {
-      case 'START_TIMER': {
-        const nextState = startTimer(state, config);
-        await setTimerState(nextState);
+      switch (message.action) {
+        case 'START_TIMER': {
+          const nextState = startTimer(state, config);
+          await setTimerState(nextState);
 
-        if (nextState.endTime !== null) {
-          await scheduleTimerAlarm(nextState.endTime);
-          await startBadgeRefresh();
+          if (nextState.endTime !== null) {
+            await scheduleTimerAlarm(nextState.endTime);
+            await startBadgeRefresh();
+          }
+
+          await refreshBadge();
+          return nextState;
         }
-
-        await refreshBadge();
-        return nextState;
-      }
-      case 'ABANDON_TIMER': {
-        const nextState = abandonTimer(state);
-        await setTimerState(nextState);
-        await clearActiveAlarms();
-        await refreshBadge();
-        return nextState;
-      }
-      case 'GET_STATE': {
-        return state;
-      }
-      case 'ACCEPT_LONG_BREAK': {
-        const nextState = acceptLongBreak(state, config);
-        await setTimerState(nextState);
-
-        if (nextState.endTime !== null) {
-          await scheduleTimerAlarm(nextState.endTime);
-          await startBadgeRefresh();
-        }
-
-        await refreshBadge();
-        return nextState;
-      }
-      case 'SKIP_LONG_BREAK': {
-        const nextState = skipLongBreak(state);
-        await setTimerState(nextState);
-        await clearActiveAlarms();
-        await refreshBadge();
-        return nextState;
-      }
-      case 'UPDATE_CONFIG': {
-        await setConfig(message.config);
-        const nextState = adjustDuration(state, message.config);
-        await setTimerState(nextState);
-
-        if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
-          await scheduleTimerAlarm(nextState.endTime);
-          await startBadgeRefresh();
-        } else {
+        case 'ABANDON_TIMER': {
+          const nextState = abandonTimer(state);
+          await setTimerState(nextState);
           await clearActiveAlarms();
+          await refreshBadge();
+          return nextState;
         }
+        case 'GET_STATE': {
+          return state;
+        }
+        case 'ACCEPT_LONG_BREAK': {
+          const nextState = acceptLongBreak(state, config);
+          await setTimerState(nextState);
 
-        await refreshBadge();
-        return nextState;
+          if (nextState.endTime !== null) {
+            await scheduleTimerAlarm(nextState.endTime);
+            await startBadgeRefresh();
+          }
+
+          await refreshBadge();
+          return nextState;
+        }
+        case 'SKIP_LONG_BREAK': {
+          const nextState = skipLongBreak(state);
+          await setTimerState(nextState);
+          await clearActiveAlarms();
+          await refreshBadge();
+          return nextState;
+        }
+        case 'UPDATE_CONFIG': {
+          await setConfig(message.config);
+          const nextState = adjustDuration(state, message.config);
+          await setTimerState(nextState);
+
+          if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
+            await scheduleTimerAlarm(nextState.endTime);
+            await startBadgeRefresh();
+          } else {
+            await clearActiveAlarms();
+          }
+
+          await refreshBadge();
+          return nextState;
+        }
+        default: {
+          return state;
+        }
       }
-      default: {
-        return state;
-      }
+    } catch (err) {
+      console.error('[handleMessage] failed for action "%s":', message.action, err);
+      return { error: true, message: err instanceof Error ? err.message : String(err) };
     }
   };
 
@@ -230,7 +267,12 @@ export default defineBackground(() => {
         // declarativeNetRequest may not be available if permission not declared
       }
     }
-    await recoverFromMissedAlarm();
+
+    if (details.reason === 'update' || details.reason === 'chrome_update') {
+      await reschedulePendingTimer();
+    } else {
+      await recoverFromMissedAlarm();
+    }
   });
 
   browser.runtime.onStartup.addListener(async () => {
@@ -249,47 +291,61 @@ export default defineBackground(() => {
       return;
     }
 
-    const [state, config] = await Promise.all([getTimerState(), getConfig()]);
-    const completed = completeTimer(state, config);
-    await setTimerState(completed);
+    try {
+      const [state, config] = await Promise.all([getTimerState(), getConfig()]);
+      const completed = completeTimer(state, config);
+      await setTimerState(completed);
 
-    if (state.phase === 'WORKING') {
-      await persistCompletedSession(state, Date.now());
-      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: '🍅 Tomate Complete!',
-          message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
-        });
-      }
-      if (config.openBreakTab !== false) {
+      if (state.phase === 'WORKING') {
+        await persistCompletedSession(state, Date.now());
         try {
-          await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
-        } catch {
-          // tab creation can fail if no browser window is open
+          if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+            await browser.notifications.create({
+              type: 'basic',
+              iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+              title: '🍅 Tomate Complete!',
+              message: `Time for a break. You've done ${completed.completedToday} tomate(s) today.`,
+            });
+          }
+        } catch (notifErr) {
+          console.error('[tomate] notification error:', notifErr);
+        }
+        if (config.openBreakTab !== false) {
+          try {
+            await browser.tabs.create({ url: browser.runtime.getURL('/stats.html') });
+          } catch {
+            // tab creation can fail if no browser window is open
+          }
         }
       }
-    }
 
-    if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
-      if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
-        await browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
-          title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
-          message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
-        });
+      if (state.phase === 'SHORT_BREAK' || state.phase === 'LONG_BREAK') {
+        try {
+          if (typeof browser.notifications !== 'undefined' && browser.notifications.create) {
+            await browser.notifications.create({
+              type: 'basic',
+              iconUrl: browser.runtime.getURL('/icons/icon-128.png'),
+              title: state.phase === 'SHORT_BREAK' ? "Break's Over" : "Long Break's Over",
+              message: state.phase === 'SHORT_BREAK' ? 'Ready for another tomate?' : "Refreshed? Let's go!",
+            });
+          }
+        } catch (notifErr) {
+          console.error('[tomate] notification error:', notifErr);
+        }
       }
-    }
 
-    if (isActivePhase(completed.phase) && completed.endTime !== null) {
-      await scheduleTimerAlarm(completed.endTime);
-      await startBadgeRefresh();
-    } else {
-      await clearActiveAlarms();
-    }
+      if (isActivePhase(completed.phase) && completed.endTime !== null) {
+        await scheduleTimerAlarm(completed.endTime);
+        await startBadgeRefresh();
+      } else {
+        await clearActiveAlarms();
+      }
 
-    await refreshBadge();
+      await refreshBadge();
+    } catch (err) {
+      console.error('[tomate] onAlarm error:', err);
+      await badgeApi.setBadgeText({ text: '!' });
+      await badgeApi.setBadgeBackgroundColor({ color: BADGE_RED });
+    }
   });
 });

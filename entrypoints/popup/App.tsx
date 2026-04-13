@@ -34,8 +34,15 @@ export default function App() {
   };
 
   onMount(async () => {
-    const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
-    setState(currentState as TimerState);
+    let currentState: TimerState;
+    try {
+      currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' }) as TimerState;
+    } catch (err) {
+      console.warn('[tomate] sendMessage failed (service worker cold start?), falling back to storage', err);
+      const { getTimerState } = await import('@/lib/storage');
+      currentState = await getTimerState();
+    }
+    setState(currentState);
 
     const config = await getConfig();
     setDailyGoal(config.dailyGoal);
@@ -151,7 +158,7 @@ export default function App() {
 
       <button
         type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html') })}
         class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
       >
         View all stats →

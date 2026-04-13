@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { getConfig, setConfig } from '@/lib/storage';
@@ -16,10 +16,12 @@ export default function App() {
   const [longBreak, setLongBreak] = createSignal(30);
   const [openBreakTab, setOpenBreakTab] = createSignal(true);
   const [playCompletionSound, setPlayCompletionSound] = createSignal(true);
-  // Preserve fields not yet surfaced in UI (e.g. dailyGoal) so we don't wipe them on save
-  const [extraConfig, setExtraConfig] = createSignal<Partial<TimerConfig>>({});
+  const [dailyGoal, setDailyGoal] = createSignal(DEFAULT_CONFIG.dailyGoal);
   const [saved, setSaved] = createSignal(false);
   const [error, setError] = createSignal('');
+  let savedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  onCleanup(() => clearTimeout(savedTimer));
 
   onMount(async () => {
     const config = await getConfig();
@@ -28,9 +30,7 @@ export default function App() {
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(config.openBreakTab !== false);
     setPlayCompletionSound(config.playCompletionSound !== false);
-    // Stash any extra fields so round-trip save doesn't lose them
-    const { workDuration: _w, shortBreakDuration: _s, longBreakDuration: _l, openBreakTab: _o, playCompletionSound: _p, ...rest } = config;
-    setExtraConfig(rest);
+    setDailyGoal(config.dailyGoal ?? DEFAULT_CONFIG.dailyGoal);
   });
 
   const isValid = () =>
@@ -42,14 +42,22 @@ export default function App() {
       setError('Please check the duration values — work must be 1–120 min, short break 1–30 min, long break 5–60 min.');
       return;
     }
+    // Clamp durations to at least 1 minute to prevent zero/negative values (#237)
+    const safeWork = Math.max(1, Math.round(work()));
+    const safeShort = Math.max(1, Math.round(shortBreak()));
+    const safeLong = Math.max(1, Math.round(longBreak()));
+
+    setWork(safeWork);
+    setShortBreak(safeShort);
+    setLongBreak(safeLong);
+
     const config: TimerConfig = {
-      ...DEFAULT_CONFIG,
-      ...extraConfig(),
-      workDuration: work() * MS_PER_MINUTE,
-      shortBreakDuration: shortBreak() * MS_PER_MINUTE,
-      longBreakDuration: longBreak() * MS_PER_MINUTE,
+      workDuration: safeWork * MS_PER_MINUTE,
+      shortBreakDuration: safeShort * MS_PER_MINUTE,
+      longBreakDuration: safeLong * MS_PER_MINUTE,
       openBreakTab: openBreakTab(),
       playCompletionSound: playCompletionSound(),
+      dailyGoal: dailyGoal(),
     };
     try {
       await setConfig(config);
@@ -63,7 +71,8 @@ export default function App() {
       // Background may not be reachable; config is already saved
     }
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => setSaved(false), 2000);
   };
 
   const handleReset = () => {
@@ -72,7 +81,7 @@ export default function App() {
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(DEFAULT_CONFIG.openBreakTab);
     setPlayCompletionSound(DEFAULT_CONFIG.playCompletionSound);
-    setExtraConfig({ dailyGoal: DEFAULT_CONFIG.dailyGoal });
+    setDailyGoal(DEFAULT_CONFIG.dailyGoal);
     setError('');
   };
 
@@ -116,6 +125,19 @@ export default function App() {
               onInput={(e) => setLongBreak(Number(e.currentTarget.value))}
               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-gray-700">Daily Goal (tomates)</span>
+            <input
+              type="number"
+              min={0}
+              max={50}
+              value={dailyGoal()}
+              onInput={(e) => setDailyGoal(Number(e.currentTarget.value))}
+              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+            <span class="text-xs text-gray-400 mt-0.5 block">Set to 0 to disable the goal progress bar.</span>
           </label>
 
           <label class="flex items-center gap-3 cursor-pointer">

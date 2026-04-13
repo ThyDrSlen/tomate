@@ -78,36 +78,45 @@ describe('computeBestDay', () => {
   });
 
   it('returns the single session date when there is one session', () => {
-    expect(computeBestDay([makeSession('2026-04-06')])).toEqual({
-      date: '2026-04-06',
+    expect(computeBestDay([makeSession(dateKey(0))])).toEqual({
+      date: dateKey(0),
       count: 1,
     });
   });
 
   it('returns the date with the most sessions', () => {
     const sessions = [
-      makeSession('2026-04-04', 'a1'),
-      makeSession('2026-04-04', 'a2'),
-      makeSession('2026-04-04', 'a3'),
-      makeSession('2026-04-05', 'b1'),
-      makeSession('2026-04-05', 'b2'),
-      makeSession('2026-04-06', 'c1'),
+      makeSession(dateKey(2), 'a1'),
+      makeSession(dateKey(2), 'a2'),
+      makeSession(dateKey(2), 'a3'),
+      makeSession(dateKey(1), 'b1'),
+      makeSession(dateKey(1), 'b2'),
+      makeSession(dateKey(0), 'c1'),
     ];
-    expect(computeBestDay(sessions)).toEqual({ date: '2026-04-04', count: 3 });
+    expect(computeBestDay(sessions)).toEqual({ date: dateKey(2), count: 3 });
+  });
+
+  it('returns count 2 when two sessions share the same date with max count', () => {
+    const sessions = [
+      makeSession(dateKey(1), 'a1'),
+      makeSession(dateKey(1), 'a2'),
+      makeSession(dateKey(0), 'b1'),
+    ];
+    expect(computeBestDay(sessions)).toEqual({ date: dateKey(1), count: 2 });
   });
 
   it('returns the first-encountered date on a tie (stable tie-breaking)', () => {
-    // Two dates with 2 sessions each — the one that appears first in iteration wins
+    // Two dates with 2 sessions each — the one encountered first in iteration wins
     const sessions = [
-      makeSession('2026-04-04', 'a1'),
-      makeSession('2026-04-04', 'a2'),
-      makeSession('2026-04-05', 'b1'),
-      makeSession('2026-04-05', 'b2'),
+      makeSession(dateKey(2), 'a1'),
+      makeSession(dateKey(2), 'a2'),
+      makeSession(dateKey(1), 'b1'),
+      makeSession(dateKey(1), 'b2'),
     ];
     const result = computeBestDay(sessions);
     expect(result?.count).toBe(2);
     // Both dates are valid winners; implementation keeps the first one encountered
-    expect(['2026-04-04', '2026-04-05']).toContain(result?.date);
+    expect([dateKey(1), dateKey(2)]).toContain(result?.date);
   });
 });
 
