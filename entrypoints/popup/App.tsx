@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { browser } from 'wxt/browser';
 
 import { isActivePhase } from '@/lib/timer';
@@ -21,6 +21,7 @@ import TodayCount from '@/components/TodayCount';
 import Heatmap from '@/components/Heatmap';
 
 export default function App() {
+  const [isLoading, setIsLoading] = createSignal(true);
   const [state, setState] = createSignal<TimerState>(INITIAL_STATE);
   const [remaining, setRemaining] = createSignal(0);
   const [label, setLabel] = createSignal('');
@@ -36,6 +37,7 @@ export default function App() {
   onMount(async () => {
     const currentState = await browser.runtime.sendMessage({ action: 'GET_STATE' });
     setState(currentState as TimerState);
+    setIsLoading(false);
 
     const config = await getConfig();
     setDailyGoal(config.dailyGoal);
@@ -120,42 +122,44 @@ export default function App() {
         </button>
       </div>
 
-      <TimerRing progress={progress()} phase={state().phase} />
-      <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
+      <Show when={!isLoading()} fallback={<div class="flex-1" />}>
+        <TimerRing progress={progress()} phase={state().phase} />
+        <div class="text-4xl font-mono font-bold text-gray-800 mt-2">{formatTime()}</div>
 
-      <div class="text-sm text-gray-500 mt-1">
-        <Switch>
-          <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
-          <Match when={state().phase === 'WORKING'}>Working</Match>
-          <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
-          <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
-          <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
-        </Switch>
-      </div>
+        <div class="text-sm text-gray-500 mt-1">
+          <Switch>
+            <Match when={state().phase === 'IDLE'}>Ready to focus</Match>
+            <Match when={state().phase === 'WORKING'}>Working</Match>
+            <Match when={state().phase === 'SHORT_BREAK'}>Short Break</Match>
+            <Match when={state().phase === 'LONG_BREAK'}>Long Break</Match>
+            <Match when={state().phase === 'BREAK_SUGGESTION'}>Time for a long break!</Match>
+          </Switch>
+        </div>
 
-      <TaskLabel value={label()} onChange={handleLabelChange} />
+        <TaskLabel value={label()} onChange={handleLabelChange} />
 
-      <Controls
-        phase={state().phase}
-        onStart={startTimer}
-        onAbandon={abandonTimer}
-        onAcceptLongBreak={acceptLongBreak}
-        onSkipLongBreak={skipLongBreak}
-      />
+        <Controls
+          phase={state().phase}
+          onStart={startTimer}
+          onAbandon={abandonTimer}
+          onAcceptLongBreak={acceptLongBreak}
+          onSkipLongBreak={skipLongBreak}
+        />
 
-      <TodayCount count={todayCount()} goal={dailyGoal()} />
+        <TodayCount count={todayCount()} goal={dailyGoal()} />
 
-      <div class="mt-2 w-full">
-        <Heatmap days={120} data={heatmapData()} />
-      </div>
+        <div class="mt-2 w-full">
+          <Heatmap days={120} data={heatmapData()} />
+        </div>
 
-      <button
-        type="button"
-        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
-        class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
-      >
-        View all stats →
-      </button>
+        <button
+          type="button"
+          onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/stats.html' as '/popup.html') })}
+          class="mt-2 text-xs text-red-400 hover:text-red-600 underline"
+        >
+          View all stats →
+        </button>
+      </Show>
     </div>
   );
 }
