@@ -104,6 +104,24 @@ describe('storage helpers', () => {
     await expect(getSessionHistory(2)).resolves.toEqual([withinRange, today]);
   });
 
+  it('includes sessions on the oldest requested day (boundary)', async () => {
+    // today = 2026-03-20; days=3 means oldest day is 2026-03-18
+    vi.spyOn(Date, 'now').mockReturnValue(new Date(2026, 2, 20, 12, 0, 0).getTime());
+
+    const oldestDay = createSession(new Date(2026, 2, 18, 9, 0, 0).getTime());
+    const middleDay = createSession(new Date(2026, 2, 19, 9, 0, 0).getTime());
+    const excluded = createSession(new Date(2026, 2, 17, 9, 0, 0).getTime());
+
+    await addCompletedSession(oldestDay);
+    await addCompletedSession(middleDay);
+    await addCompletedSession(excluded);
+
+    const result = await getSessionHistory(3);
+    expect(result).toContainEqual(oldestDay);
+    expect(result).toContainEqual(middleDay);
+    expect(result).not.toContainEqual(excluded);
+  });
+
   it('aggregates heatmap counts by local date key', async () => {
     const dateA = new Date(2026, 2, 15, 9, 0, 0).getTime();
     const dateB = new Date(2026, 2, 16, 14, 0, 0).getTime();
@@ -132,12 +150,26 @@ describe('storage helpers', () => {
     await expect(getTodayCount()).resolves.toBe(2);
   });
 
-  it('truncates labels to 50 characters before storing', async () => {
+  it('stores a label that is exactly 50 characters without truncation', async () => {
+    const label = 'a'.repeat(50);
+
+    await setCurrentLabel(label);
+
+    await expect(getCurrentLabel()).resolves.toBe(label);
+  });
+
+  it('truncates labels longer than 50 characters to exactly 50', async () => {
     const label = 'x'.repeat(51);
 
     await setCurrentLabel(label);
 
     await expect(getCurrentLabel()).resolves.toBe('x'.repeat(50));
+  });
+
+  it('stores an empty string label without modification', async () => {
+    await setCurrentLabel('');
+
+    await expect(getCurrentLabel()).resolves.toBe('');
   });
 
   it('roundtrips the pending celebration flag', async () => {
