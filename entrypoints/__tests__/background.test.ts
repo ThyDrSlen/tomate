@@ -243,6 +243,119 @@ describe('background service worker', () => {
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
   });
 
+  it('ALARM_BADGE_REFRESH alarm fires and updates badge from current timer state', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(60_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 0,
+        endTime: 120_000,
+        duration: 120_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 60_000 });
+
+    // refreshBadge reads the WORKING state: remaining = 120_000 - 60_000 = 60_000 ms → 1 minute
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: '1' });
+    expect(fakeBrowser.action.setBadgeBackgroundColor).toHaveBeenLastCalledWith({ color: '#DC2626' });
+  });
+
+  it('ALARM_BADGE_REFRESH does not mutate timer state', async () => {
+    const storedState = createState({
+      phase: 'SHORT_BREAK',
+      startTime: 0,
+      endTime: 300_000,
+      duration: 300_000,
+    });
+    await setTimerState(storedState);
+    await initBackground();
+
+    await fakeBrowser.alarms.onAlarm.trigger({ name: 'badge-refresh', scheduledTime: 1_000 });
+
+    // State must be untouched after a badge-refresh alarm
+    await expect(getTimerState()).resolves.toEqual(storedState);
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: 'BRK' });
+  });
+
+  it('onStartup triggers alarm recovery for a missed working session', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    await setCurrentLabel('Startup recovery');
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      }),
+    );
+    await initBackground();
+
+    await fakeBrowser.runtime.onStartup.trigger();
+
+    await expect(getTimerState()).resolves.toEqual(
+      createState({
+        phase: 'SHORT_BREAK',
+        startTime: 10_000,
+        endTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
+        duration: DEFAULT_CONFIG.shortBreakDuration,
+        sessionCount: 1,
+        completedToday: 1,
+      }),
+    );
+    await expect(getPendingCelebration()).resolves.toBe(true);
+    await expect(getSessionHistory()).resolves.toEqual([
+      {
+        id: expect.any(String),
+        label: 'Startup recovery',
+        startTime: 1_000,
+        endTime: 10_000,
+        date: toDateKey(1_000),
+        duration: 1_000,
+      },
+    ]);
+    await expect(fakeBrowser.alarms.get('tomate-timer')).resolves.toEqual(
+      expect.objectContaining({
+        scheduledTime: 10_000 + DEFAULT_CONFIG.shortBreakDuration,
+      }),
+    );
+  });
+
+  it('onStartup is distinct from onInstalled and runs recovery independently', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+      }),
+    );
+    await initBackground();
+
+    // Fire onInstalled with reason 'update' — recovery happens once
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', temporary: false } as never);
+    const stateAfterInstalled = await getTimerState();
+    expect(stateAfterInstalled.phase).toBe('SHORT_BREAK');
+
+    // Reset to a new missed alarm scenario so onStartup can recover again
+    vi.spyOn(Date, 'now').mockReturnValue(20_000);
+    await setTimerState(
+      createState({
+        phase: 'WORKING',
+        startTime: 10_000,
+        endTime: 11_000,
+        duration: 1_000,
+      }),
+    );
+
+    // Fire onStartup separately — should also invoke recovery
+    await fakeBrowser.runtime.onStartup.trigger();
+
+    await expect(getTimerState()).resolves.toMatchObject({ phase: 'SHORT_BREAK', sessionCount: 1 });
+  });
+
   it('updates config during an active timer and recreates the timer alarm', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const updatedConfig = createConfig({ workDuration: 20_000, shortBreakDuration: 1_000 });
