@@ -218,7 +218,7 @@ describe('background service worker', () => {
         id: expect.any(String),
         label: 'Recovered work',
         startTime: 1_000,
-        endTime: 10_000,
+        endTime: 2_000,
         date: toDateKey(1_000),
         duration: 1_000,
       },
