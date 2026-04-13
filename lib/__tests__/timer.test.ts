@@ -261,4 +261,56 @@ describe('timer state machine', () => {
     expect(isActivePhase('IDLE')).toBe(false);
     expect(isActivePhase('BREAK_SUGGESTION')).toBe(false);
   });
+
+  describe('BREAK_SUGGESTION null endTime edge cases', () => {
+    const breakSuggestionState = createState({
+      phase: 'BREAK_SUGGESTION',
+      startTime: null,
+      endTime: null,
+      duration: null,
+      sessionCount: 4,
+      cyclePosition: 3,
+      completedToday: 4,
+    });
+
+    it('BREAK_SUGGESTION state has null startTime, endTime, and duration', () => {
+      expect(breakSuggestionState.startTime).toBeNull();
+      expect(breakSuggestionState.endTime).toBeNull();
+      expect(breakSuggestionState.duration).toBeNull();
+    });
+
+    it('getRemainingMs returns 0 when endTime is null', () => {
+      expect(getRemainingMs(breakSuggestionState, 5_000)).toBe(0);
+      expect(getRemainingMs(breakSuggestionState, 0)).toBe(0);
+    });
+
+    it('adjustDuration returns state unchanged when phase is BREAK_SUGGESTION', () => {
+      const config = createConfig({ workDuration: 25 * 60 * 1000 });
+      expect(adjustDuration(breakSuggestionState, config, 5_000)).toBe(breakSuggestionState);
+    });
+
+    it('completeTimer returns state unchanged when phase is BREAK_SUGGESTION', () => {
+      const config = createConfig();
+      expect(completeTimer(breakSuggestionState, config, 5_000)).toBe(breakSuggestionState);
+    });
+
+    it('completeTimer produces BREAK_SUGGESTION with null endTime after 4th work session', () => {
+      const config = createConfig({ workDuration: 1_000, shortBreakDuration: 200 });
+      const workingState = createState({
+        phase: 'WORKING',
+        startTime: 1_000,
+        endTime: 2_000,
+        duration: 1_000,
+        sessionCount: 3,
+        cyclePosition: 3,
+        completedToday: 3,
+      });
+
+      const result = completeTimer(workingState, config, 2_000);
+      expect(result.phase).toBe('BREAK_SUGGESTION');
+      expect(result.startTime).toBeNull();
+      expect(result.endTime).toBeNull();
+      expect(result.duration).toBeNull();
+    });
+  });
 });
