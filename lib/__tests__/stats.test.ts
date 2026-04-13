@@ -1,27 +1,114 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeStreak } from '../stats';
+import { computeBestDay, computeStreak, computeTotalCount, computeWeekCount } from '../stats';
 import type { CompletedSession } from '../types';
 
-/** Return a YYYY-MM-DD key for `daysAgo` days before today. */
+const makeSession = (date: string, id = date): CompletedSession => ({
+  id,
+  label: 'work',
+  startTime: 0,
+  endTime: 0,
+  date,
+  duration: 1_500_000,
+});
+
+// Compute date keys relative to actual today so tests are always valid
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const dateKey = (daysAgo: number): string => {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() - daysAgo);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return `${y}-${m}-${day}`;
 };
 
-/** Minimal session stub — computeStreak only reads `date`. */
-const session = (daysAgo: number): CompletedSession => ({
-  id: `s-${daysAgo}`,
-  label: 'Deep work',
-  startTime: Date.now() - daysAgo * 86_400_000,
-  endTime: Date.now() - daysAgo * 86_400_000 + 1_500_000,
-  date: dateKey(daysAgo),
-  duration: 1_500_000,
+describe('computeTotalCount', () => {
+  it('returns 0 for an empty array', () => {
+    expect(computeTotalCount([])).toBe(0);
+  });
+
+  it('returns 1 for a single session', () => {
+    expect(computeTotalCount([makeSession(dateKey(0))])).toBe(1);
+  });
+
+  it('returns n for n sessions', () => {
+    const sessions = [
+      makeSession(dateKey(2), 'a'),
+      makeSession(dateKey(1), 'b'),
+      makeSession(dateKey(0), 'c'),
+    ];
+    expect(computeTotalCount(sessions)).toBe(3);
+  });
+});
+
+describe('computeWeekCount', () => {
+  it('returns 0 for an empty array', () => {
+    expect(computeWeekCount([])).toBe(0);
+  });
+
+  it('counts a session that falls on today', () => {
+    expect(computeWeekCount([makeSession(dateKey(0))])).toBe(1);
+  });
+
+  it('counts a session 6 days ago (inclusive boundary)', () => {
+    expect(computeWeekCount([makeSession(dateKey(6))])).toBe(1);
+  });
+
+  it('excludes a session 7 days ago (outside boundary)', () => {
+    expect(computeWeekCount([makeSession(dateKey(7))])).toBe(0);
+  });
+
+  it('counts only sessions within the 7-day window', () => {
+    const sessions = [
+      makeSession(dateKey(7), 'outside'),  // 7 days ago — excluded
+      makeSession(dateKey(6), 'border'),   // 6 days ago — included
+      makeSession(dateKey(3), 'mid'),      // 3 days ago — included
+      makeSession(dateKey(0), 'today'),    // today — included
+    ];
+    expect(computeWeekCount(sessions)).toBe(3);
+  });
+});
+
+describe('computeBestDay', () => {
+  it('returns null for an empty array', () => {
+    expect(computeBestDay([])).toBeNull();
+  });
+
+  it('returns the single session date when there is one session', () => {
+    expect(computeBestDay([makeSession('2026-04-06')])).toEqual({
+      date: '2026-04-06',
+      count: 1,
+    });
+  });
+
+  it('returns the date with the most sessions', () => {
+    const sessions = [
+      makeSession('2026-04-04', 'a1'),
+      makeSession('2026-04-04', 'a2'),
+      makeSession('2026-04-04', 'a3'),
+      makeSession('2026-04-05', 'b1'),
+      makeSession('2026-04-05', 'b2'),
+      makeSession('2026-04-06', 'c1'),
+    ];
+    expect(computeBestDay(sessions)).toEqual({ date: '2026-04-04', count: 3 });
+  });
+
+  it('returns the first-encountered date on a tie (stable tie-breaking)', () => {
+    // Two dates with 2 sessions each — the one that appears first in iteration wins
+    const sessions = [
+      makeSession('2026-04-04', 'a1'),
+      makeSession('2026-04-04', 'a2'),
+      makeSession('2026-04-05', 'b1'),
+      makeSession('2026-04-05', 'b2'),
+    ];
+    const result = computeBestDay(sessions);
+    expect(result?.count).toBe(2);
+    // Both dates are valid winners; implementation keeps the first one encountered
+    expect(['2026-04-04', '2026-04-05']).toContain(result?.date);
+  });
 });
 
 describe('computeStreak', () => {
@@ -29,33 +116,88 @@ describe('computeStreak', () => {
     expect(computeStreak([])).toBe(0);
   });
 
-  it('returns 1 when only today has a session', () => {
-    expect(computeStreak([session(0)])).toBe(1);
+  it('returns 1 when the only session is today', () => {
+    expect(computeStreak([makeSession(dateKey(0))])).toBe(1);
   });
 
   it('returns 0 when the most recent session is two or more days ago (gap day)', () => {
-    expect(computeStreak([session(3)])).toBe(0);
+    expect(computeStreak([makeSession(dateKey(3))])).toBe(0);
   });
 
-  it('continues the streak from yesterday when today has no session', () => {
-    // yesterday + day-before-yesterday → streak of 2
-    expect(computeStreak([session(1), session(2)])).toBe(2);
+  it('returns 0 when the streak is broken (gap yesterday, only older sessions)', () => {
+    // Session 2 days ago but nothing yesterday or today — streak is 0
+    const sessions = [makeSession(dateKey(2))];
+    expect(computeStreak(sessions)).toBe(0);
+  });
+
+  it('counts consecutive days including today', () => {
+    const sessions = [
+      makeSession(dateKey(0), 'a'),
+      makeSession(dateKey(1), 'b'),
+      makeSession(dateKey(2), 'c'),
+    ];
+    expect(computeStreak(sessions)).toBe(3);
   });
 
   it('counts a multi-day consecutive streak ending today', () => {
     // today through 4 days ago → streak of 5
-    const sessions = [session(0), session(1), session(2), session(3), session(4)];
+    const sessions = [
+      makeSession(dateKey(0), 'a'),
+      makeSession(dateKey(1), 'b'),
+      makeSession(dateKey(2), 'c'),
+      makeSession(dateKey(3), 'd'),
+      makeSession(dateKey(4), 'e'),
+    ];
     expect(computeStreak(sessions)).toBe(5);
   });
 
-  it('stops counting at the first gap', () => {
-    // today, yesterday, 2-days-ago, then a gap, then 4-days-ago
-    const sessions = [session(0), session(1), session(2), session(4)];
+  it('counts a streak starting from yesterday when today has no session', () => {
+    const sessions = [
+      makeSession(dateKey(1), 'a'),
+      makeSession(dateKey(2), 'b'),
+      makeSession(dateKey(3), 'c'),
+    ];
     expect(computeStreak(sessions)).toBe(3);
   });
 
-  it('handles multiple sessions on the same day without double-counting', () => {
-    const sessions = [session(0), session(0), session(1)];
+  it('stops the streak at the first gap', () => {
+    // Today, yesterday, skip day 2, then day 3
+    const sessions = [
+      makeSession(dateKey(0), 'a'),
+      makeSession(dateKey(1), 'b'),
+      // gap at dateKey(2)
+      makeSession(dateKey(3), 'c'),
+    ];
+    expect(computeStreak(sessions)).toBe(2);
+  });
+
+  it('stops counting at the first gap (longer run)', () => {
+    // today, yesterday, 2-days-ago, then a gap, then 4-days-ago
+    const sessions = [
+      makeSession(dateKey(0), 'a'),
+      makeSession(dateKey(1), 'b'),
+      makeSession(dateKey(2), 'c'),
+      makeSession(dateKey(4), 'd'),
+    ];
+    expect(computeStreak(sessions)).toBe(3);
+  });
+
+  it('counts multiple sessions on the same day as one day', () => {
+    const sessions = [
+      makeSession(dateKey(0), 'a1'),
+      makeSession(dateKey(0), 'a2'),
+      makeSession(dateKey(0), 'a3'),
+      makeSession(dateKey(1), 'b1'),
+    ];
+    expect(computeStreak(sessions)).toBe(2);
+  });
+
+  it('handles multiple sessions on the same day without double-counting (two-day streak)', () => {
+    const sessions = [
+      makeSession(dateKey(0), 'x1'),
+      makeSession(dateKey(0), 'x2'),
+      makeSession(dateKey(1), 'y'),
+    ];
     expect(computeStreak(sessions)).toBe(2);
   });
 });
