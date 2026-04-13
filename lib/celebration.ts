@@ -22,10 +22,18 @@ const CONFETTI_CONFIGS: Record<string, confetti.Options> = {
   },
 };
 
-export const playCelebration = (type: 'work' | 'milestone' | 'break'): void => {
+export const playCelebration = (type: 'work' | 'milestone' | 'break', playSound = true): void => {
   confetti(CONFETTI_CONFIGS[type]);
 
-  new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html')).play().catch((err) => {
-    console.warn('[tomate] celebration audio playback failed:', err);
-  });
+  if (playSound) {
+    try {
+      new Audio(browser.runtime.getURL('/sounds/completion.mp3' as '/popup.html'))
+        .play()
+        .catch((err) => {
+          console.warn('[tomate] celebration audio playback failed:', err);
+        });
+    } catch {
+      // Audio constructor can throw in non-browser environments
+    }
+  }
 };

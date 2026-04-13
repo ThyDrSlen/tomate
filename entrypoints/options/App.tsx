@@ -6,13 +6,19 @@ import { DEFAULT_CONFIG, type TimerConfig } from '@/lib/types';
 
 const MS_PER_MINUTE = 60_000;
 
+const isValidWork = (v: number) => v >= 1 && v <= 120;
+const isValidShortBreak = (v: number) => v >= 1 && v <= 30;
+const isValidLongBreak = (v: number) => v >= 5 && v <= 60;
+
 export default function App() {
   const [work, setWork] = createSignal(25);
   const [shortBreak, setShortBreak] = createSignal(5);
   const [longBreak, setLongBreak] = createSignal(30);
   const [openBreakTab, setOpenBreakTab] = createSignal(true);
+  const [playCompletionSound, setPlayCompletionSound] = createSignal(true);
   const [dailyGoal, setDailyGoal] = createSignal(DEFAULT_CONFIG.dailyGoal);
   const [saved, setSaved] = createSignal(false);
+  const [error, setError] = createSignal('');
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
 
   onCleanup(() => clearTimeout(savedTimer));
@@ -23,10 +29,19 @@ export default function App() {
     setShortBreak(Math.round(config.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(config.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(config.openBreakTab !== false);
+    setPlayCompletionSound(config.playCompletionSound !== false);
     setDailyGoal(config.dailyGoal ?? DEFAULT_CONFIG.dailyGoal);
   });
 
+  const isValid = () =>
+    isValidWork(work()) && isValidShortBreak(shortBreak()) && isValidLongBreak(longBreak());
+
   const handleSave = async () => {
+    setError('');
+    if (!isValid()) {
+      setError('Please check the duration values — work must be 1–120 min, short break 1–30 min, long break 5–60 min.');
+      return;
+    }
     // Clamp durations to at least 1 minute to prevent zero/negative values (#237)
     const safeWork = Math.max(1, Math.round(work()));
     const safeShort = Math.max(1, Math.round(shortBreak()));
@@ -41,10 +56,20 @@ export default function App() {
       shortBreakDuration: safeShort * MS_PER_MINUTE,
       longBreakDuration: safeLong * MS_PER_MINUTE,
       openBreakTab: openBreakTab(),
+      playCompletionSound: playCompletionSound(),
       dailyGoal: dailyGoal(),
     };
-    await setConfig(config);
-    await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
+    try {
+      await setConfig(config);
+    } catch {
+      setError('Failed to save settings to storage.');
+      return;
+    }
+    try {
+      await browser.runtime.sendMessage({ action: 'UPDATE_CONFIG', config });
+    } catch {
+      // Background may not be reachable; config is already saved
+    }
     setSaved(true);
     clearTimeout(savedTimer);
     savedTimer = setTimeout(() => setSaved(false), 2000);
@@ -55,7 +80,9 @@ export default function App() {
     setShortBreak(Math.round(DEFAULT_CONFIG.shortBreakDuration / MS_PER_MINUTE));
     setLongBreak(Math.round(DEFAULT_CONFIG.longBreakDuration / MS_PER_MINUTE));
     setOpenBreakTab(DEFAULT_CONFIG.openBreakTab);
+    setPlayCompletionSound(DEFAULT_CONFIG.playCompletionSound);
     setDailyGoal(DEFAULT_CONFIG.dailyGoal);
+    setError('');
   };
 
   return (
@@ -122,13 +149,24 @@ export default function App() {
             />
             <span class="text-sm font-medium text-gray-700">Open stats tab when session completes</span>
           </label>
+
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={playCompletionSound()}
+              onChange={(e) => setPlayCompletionSound(e.currentTarget.checked)}
+              class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+            />
+            <span class="text-sm font-medium text-gray-700">Play completion sound</span>
+          </label>
         </div>
 
         <div class="mt-6 flex items-center gap-4">
           <button
             type="button"
             onClick={handleSave}
-            class="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+            disabled={!isValid()}
+            class="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Save
           </button>
@@ -145,6 +183,10 @@ export default function App() {
             <span class="text-sm text-green-600">Settings saved ✓</span>
           </Show>
         </div>
+
+        <Show when={error()}>
+          <p class="mt-3 text-sm text-red-600" role="alert">{error()}</p>
+        </Show>
       </div>
     </div>
   );

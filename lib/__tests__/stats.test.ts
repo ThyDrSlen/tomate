@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeBestDay, computeTotalCount, computeWeekCount } from '../stats';
+import { computeBestDay, computeStreak, computeTotalCount, computeWeekCount } from '../stats';
 import type { CompletedSession } from '../types';
 
 const makeSession = (date: string, id = date): CompletedSession => ({
@@ -13,6 +13,8 @@ const makeSession = (date: string, id = date): CompletedSession => ({
 });
 
 // Compute date keys relative to actual today so tests are always valid
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const dateKey = (daysAgo: number): string => {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -115,5 +117,60 @@ describe('computeBestDay', () => {
     expect(result?.count).toBe(2);
     // Both dates are valid winners; implementation keeps the first one encountered
     expect([dateKey(1), dateKey(2)]).toContain(result?.date);
+  });
+});
+
+describe('computeStreak', () => {
+  it('returns 0 for empty sessions', () => {
+    expect(computeStreak([])).toBe(0);
+  });
+
+  it('returns 1 when the only session is today', () => {
+    expect(computeStreak([makeSession(dateKey(0))])).toBe(1);
+  });
+
+  it('counts consecutive days including today', () => {
+    const sessions = [
+      makeSession(dateKey(0), 'a'),
+      makeSession(dateKey(1), 'b'),
+      makeSession(dateKey(2), 'c'),
+    ];
+    expect(computeStreak(sessions)).toBe(3);
+  });
+
+  it('returns 0 when the streak is broken (gap yesterday, only older sessions)', () => {
+    // Session 2 days ago but nothing yesterday or today — streak is 0
+    const sessions = [makeSession(dateKey(2))];
+    expect(computeStreak(sessions)).toBe(0);
+  });
+
+  it('counts a streak starting from yesterday when today has no session', () => {
+    const sessions = [
+      makeSession(dateKey(1), 'a'),
+      makeSession(dateKey(2), 'b'),
+      makeSession(dateKey(3), 'c'),
+    ];
+    expect(computeStreak(sessions)).toBe(3);
+  });
+
+  it('stops the streak at the first gap', () => {
+    // Today, yesterday, skip day 2, then day 3
+    const sessions = [
+      makeSession(dateKey(0), 'a'),
+      makeSession(dateKey(1), 'b'),
+      // gap at dateKey(2)
+      makeSession(dateKey(3), 'c'),
+    ];
+    expect(computeStreak(sessions)).toBe(2);
+  });
+
+  it('counts multiple sessions on the same day as one day', () => {
+    const sessions = [
+      makeSession(dateKey(0), 'a1'),
+      makeSession(dateKey(0), 'a2'),
+      makeSession(dateKey(0), 'a3'),
+      makeSession(dateKey(1), 'b1'),
+    ];
+    expect(computeStreak(sessions)).toBe(2);
   });
 });
