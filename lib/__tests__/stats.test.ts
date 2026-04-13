@@ -70,6 +70,18 @@ describe('computeWeekCount', () => {
     ];
     expect(computeWeekCount(sessions)).toBe(3);
   });
+
+  it('counts exactly 7 days: one session per day for 7 days equals 7', () => {
+    // Sessions on each of the 7 days: today (0) through 6 days ago (6)
+    const sessions = [0, 1, 2, 3, 4, 5, 6].map((d) => makeSession(dateKey(d), `d${d}`));
+    expect(computeWeekCount(sessions)).toBe(7);
+  });
+
+  it('does not count an 8th session on day 7', () => {
+    // 8 sessions spanning 8 days — only 7 should be counted
+    const sessions = [0, 1, 2, 3, 4, 5, 6, 7].map((d) => makeSession(dateKey(d), `d${d}`));
+    expect(computeWeekCount(sessions)).toBe(7);
+  });
 });
 
 describe('computeBestDay', () => {
