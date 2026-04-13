@@ -8,6 +8,7 @@ import {
   getPendingCelebration,
   getSessionHistory,
   getTimerState,
+  setBlockedSites,
   setCurrentLabel,
   setTimerState,
   toDateKey,
@@ -48,6 +49,14 @@ describe('background service worker', () => {
 
     fakeBrowser.action.setBadgeText = vi.fn().mockResolvedValue(undefined);
     fakeBrowser.action.setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+
+    // Provide a chrome.declarativeNetRequest stub so applyBlockingRules doesn't throw
+    (globalThis as typeof globalThis & { chrome: unknown }).chrome = {
+      declarativeNetRequest: {
+        getDynamicRules: vi.fn().mockResolvedValue([]),
+        updateDynamicRules: vi.fn().mockResolvedValue(undefined),
+      },
+    };
   });
 
   it('starts a timer, persists working state, and creates the timer alarm', async () => {
@@ -241,6 +250,122 @@ describe('background service worker', () => {
     await initBackground();
 
     await expect(fakeBrowser.runtime.sendMessage({ action: 'GET_STATE' })).resolves.toEqual(storedState);
+  });
+
+  it('applyBlockingRules during WORKING phase applies DNR rules for each site', async () => {
+    const globalChrome = (globalThis as typeof globalThis & {
+      chrome: { declarativeNetRequest: { getDynamicRules: ReturnType<typeof vi.fn>; updateDynamicRules: ReturnType<typeof vi.fn> } };
+    }).chrome;
+
+    await setTimerState(
+      createState({ phase: 'WORKING', startTime: 1_000, endTime: 60_001_000, duration: 60_000_000 }),
+    );
+    await initBackground();
+
+    const bg = (await import(`../background?dnrTest=${testId++}`)) as {
+      applyBlockingRules?: (sites: string[]) => Promise<void>;
+    };
+
+    await bg.applyBlockingRules?.(['example.com', 'reddit.com']);
+
+    expect(globalChrome.declarativeNetRequest.updateDynamicRules).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addRules: [
+          expect.objectContaining({
+            id: 1,
+            priority: 1,
+            action: { type: 'block' },
+            condition: expect.objectContaining({ urlFilter: 'example.com', resourceTypes: ['main_frame'] }),
+          }),
+          expect.objectContaining({
+            id: 2,
+            priority: 1,
+            action: { type: 'block' },
+            condition: expect.objectContaining({ urlFilter: 'reddit.com', resourceTypes: ['main_frame'] }),
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('applyBlockingRules with empty sites array clears all existing DNR rules', async () => {
+    const globalChrome = (globalThis as typeof globalThis & {
+      chrome: { declarativeNetRequest: { getDynamicRules: ReturnType<typeof vi.fn>; updateDynamicRules: ReturnType<typeof vi.fn> } };
+    }).chrome;
+
+    // Simulate two existing rules already present
+    globalChrome.declarativeNetRequest.getDynamicRules.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+
+    await initBackground();
+
+    const bg = (await import(`../background?dnrClear=${testId++}`)) as {
+      applyBlockingRules?: (sites: string[]) => Promise<void>;
+    };
+
+    await bg.applyBlockingRules?.([]);
+
+    expect(globalChrome.declarativeNetRequest.updateDynamicRules).toHaveBeenCalledWith({
+      removeRuleIds: [1, 2],
+      addRules: [],
+    });
+  });
+
+  it('blockedSites storage listener applies rules when phase is WORKING', async () => {
+    const globalChrome = (globalThis as typeof globalThis & {
+      chrome: { declarativeNetRequest: { updateDynamicRules: ReturnType<typeof vi.fn> } };
+    }).chrome;
+
+    await setTimerState(
+      createState({ phase: 'WORKING', startTime: 1_000, endTime: 60_001_000, duration: 60_000_000 }),
+    );
+    await initBackground();
+
+    await setBlockedSites(['reddit.com']);
+
+    // Allow the listener's .then() microtasks to settle
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(globalChrome.declarativeNetRequest.updateDynamicRules).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addRules: [
+          expect.objectContaining({ condition: expect.objectContaining({ urlFilter: 'reddit.com' }) }),
+        ],
+      }),
+    );
+  });
+
+  it('blockedSites storage listener clears rules when phase is not WORKING', async () => {
+    const globalChrome = (globalThis as typeof globalThis & {
+      chrome: { declarativeNetRequest: { updateDynamicRules: ReturnType<typeof vi.fn> } };
+    }).chrome;
+
+    await setTimerState(createState({ phase: 'IDLE' }));
+    await initBackground();
+
+    await setBlockedSites(['reddit.com']);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Should call updateDynamicRules with empty addRules (clear mode)
+    expect(globalChrome.declarativeNetRequest.updateDynamicRules).toHaveBeenCalledWith(
+      expect.objectContaining({ addRules: [] }),
+    );
+  });
+
+  it('blockedSites storage listener ignores changes to other storage keys', async () => {
+    const globalChrome = (globalThis as typeof globalThis & {
+      chrome: { declarativeNetRequest: { updateDynamicRules: ReturnType<typeof vi.fn> } };
+    }).chrome;
+
+    await setTimerState(
+      createState({ phase: 'WORKING', startTime: 1_000, endTime: 60_001_000, duration: 60_000_000 }),
+    );
+    await initBackground();
+
+    // Trigger storage change on a different key
+    await fakeBrowser.storage.onChanged.trigger({ someOtherKey: { newValue: 'foo' } }, 'local');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(globalChrome.declarativeNetRequest.updateDynamicRules).not.toHaveBeenCalled();
   });
 
   it('updates config during an active timer and recreates the timer alarm', async () => {
