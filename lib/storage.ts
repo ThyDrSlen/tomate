@@ -85,6 +85,18 @@ export const getHeatmapData = async (days: number): Promise<Record<string, numbe
   }, {});
 };
 
+export const getHeatmapDataForYear = async (year: number): Promise<Record<string, number>> => {
+  const allSessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];
+  const prefix = String(year);
+
+  return allSessions
+    .filter((s) => s.date.startsWith(prefix))
+    .reduce<Record<string, number>>((acc, session) => {
+      acc[session.date] = (acc[session.date] ?? 0) + 1;
+      return acc;
+    }, {});
+};
+
 export const getTodayCount = async (): Promise<number> => {
   const todayKey = toDateKey(Date.now());
   const sessions = (await getStoredValue<CompletedSession[]>(KEYS.SESSIONS)) ?? [];

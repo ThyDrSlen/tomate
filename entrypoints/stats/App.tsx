@@ -1,6 +1,6 @@
-import { createResource, For, Show } from 'solid-js';
+import { createResource, createSignal, For, Show } from 'solid-js';
 
-import { getConfig, getSessionHistory, getHeatmapData, getTodayCount } from '@/lib/storage';
+import { getConfig, getSessionHistory, getHeatmapDataForYear, getTodayCount } from '@/lib/storage';
 import { computeTotalCount, computeWeekCount, computeBestDay, computeStreak } from '@/lib/stats';
 
 import Heatmap from '@/components/Heatmap';
@@ -46,7 +46,10 @@ function exportCSV(sessions: import('@/lib/types').CompletedSession[]): void {
 }
 
 export default function App() {
-  const [yearData] = createResource(() => getHeatmapData(365));
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = createSignal(currentYear);
+
+  const [yearData] = createResource(selectedYear, (year) => getHeatmapDataForYear(year));
   const [sessions] = createResource(() => getSessionHistory());
   const [todayCount] = createResource(() => getTodayCount());
   const [config] = createResource(() => getConfig());
@@ -117,8 +120,30 @@ export default function App() {
           </div>
 
           <div class="bg-white rounded-xl p-5 shadow-sm border border-red-100">
-            <h2 class="text-sm font-semibold text-gray-700 mb-3">365-day activity</h2>
-            <Heatmap days={365} cellSize={14} data={yearData() ?? {}} />
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="text-sm font-semibold text-gray-700">Activity</h2>
+              <div class="flex items-center gap-2">
+                <button
+                  aria-label="Previous year"
+                  class="w-6 h-6 flex items-center justify-center rounded hover:bg-red-100 text-red-600 transition-colors"
+                  onClick={() => setSelectedYear((y) => y - 1)}
+                >
+                  &#8249;
+                </button>
+                <span class="text-sm font-medium text-gray-700 w-10 text-center">
+                  {selectedYear()}
+                </span>
+                <button
+                  aria-label="Next year"
+                  disabled={selectedYear() >= currentYear}
+                  class="w-6 h-6 flex items-center justify-center rounded hover:bg-red-100 text-red-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  onClick={() => setSelectedYear((y) => Math.min(y + 1, currentYear))}
+                >
+                  &#8250;
+                </button>
+              </div>
+            </div>
+            <Heatmap days={365} year={selectedYear()} cellSize={14} data={yearData() ?? {}} />
 
             <div class="flex items-center gap-1 mt-3 text-[10px] text-gray-400">
               <span>Less</span>
