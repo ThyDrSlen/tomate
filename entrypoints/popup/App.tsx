@@ -47,10 +47,11 @@ export default function App() {
     }
 
     setLabel(await getCurrentLabel());
-    await refreshStats();
+    await refreshStats().catch(console.error);
 
-    browser.storage.onChanged.addListener(refreshStats);
-    onCleanup(() => browser.storage.onChanged.removeListener(refreshStats));
+    const onStorageChanged = () => refreshStats().catch(console.error);
+    browser.storage.onChanged.addListener(onStorageChanged);
+    onCleanup(() => browser.storage.onChanged.removeListener(onStorageChanged));
   });
 
   createEffect(() => {
