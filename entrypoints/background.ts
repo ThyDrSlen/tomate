@@ -147,7 +147,12 @@ export default defineBackground(() => {
     switch (message.action) {
       case 'START_TIMER': {
         const nextState = startTimer(state, config);
-        await setTimerState(nextState);
+        try {
+          await setTimerState(nextState);
+        } catch (err) {
+          console.error('[handleMessage] setTimerState failed for START_TIMER:', err);
+          return state;
+        }
 
         if (nextState.endTime !== null) {
           await scheduleTimerAlarm(nextState.endTime);
@@ -159,7 +164,12 @@ export default defineBackground(() => {
       }
       case 'ABANDON_TIMER': {
         const nextState = abandonTimer(state);
-        await setTimerState(nextState);
+        try {
+          await setTimerState(nextState);
+        } catch (err) {
+          console.error('[handleMessage] setTimerState failed for ABANDON_TIMER:', err);
+          return state;
+        }
         await clearActiveAlarms();
         await refreshBadge();
         return nextState;
@@ -169,7 +179,12 @@ export default defineBackground(() => {
       }
       case 'ACCEPT_LONG_BREAK': {
         const nextState = acceptLongBreak(state, config);
-        await setTimerState(nextState);
+        try {
+          await setTimerState(nextState);
+        } catch (err) {
+          console.error('[handleMessage] setTimerState failed for ACCEPT_LONG_BREAK:', err);
+          return state;
+        }
 
         if (nextState.endTime !== null) {
           await scheduleTimerAlarm(nextState.endTime);
@@ -181,15 +196,30 @@ export default defineBackground(() => {
       }
       case 'SKIP_LONG_BREAK': {
         const nextState = skipLongBreak(state);
-        await setTimerState(nextState);
+        try {
+          await setTimerState(nextState);
+        } catch (err) {
+          console.error('[handleMessage] setTimerState failed for SKIP_LONG_BREAK:', err);
+          return state;
+        }
         await clearActiveAlarms();
         await refreshBadge();
         return nextState;
       }
       case 'UPDATE_CONFIG': {
-        await setConfig(message.config);
+        try {
+          await setConfig(message.config);
+        } catch (err) {
+          console.error('[handleMessage] setConfig failed for UPDATE_CONFIG:', err);
+          return state;
+        }
         const nextState = adjustDuration(state, message.config);
-        await setTimerState(nextState);
+        try {
+          await setTimerState(nextState);
+        } catch (err) {
+          console.error('[handleMessage] setTimerState failed for UPDATE_CONFIG:', err);
+          return state;
+        }
 
         if (isActivePhase(nextState.phase) && nextState.endTime !== null) {
           await scheduleTimerAlarm(nextState.endTime);
