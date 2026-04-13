@@ -13,15 +13,16 @@ import {
 } from '@/lib/timer';
 import {
   addCompletedSession,
+  getBlockedSites,
   getConfig,
   getCurrentLabel,
   getTimerState,
-  getTodayCount,
   setConfig,
   setPendingCelebration,
   setTimerState,
   toDateKey,
 } from '@/lib/storage';
+import { applyBlockingRules, clearBlockingRules } from '@/lib/blocking';
 import type { CompletedSession, TimerConfig } from '@/lib/types';
 
 export type MessageAction =
@@ -41,7 +42,7 @@ export default defineBackground(() => {
   const badgeApi = browser.action;
 
   const refreshBadge = async (): Promise<void> => {
-    const [state, todayCount] = await Promise.all([getTimerState(), getTodayCount()]);
+    const state = await getTimerState();
 
     let text = '';
     let color = BADGE_RED;
@@ -54,18 +55,19 @@ export default defineBackground(() => {
       }
       case 'SHORT_BREAK':
       case 'LONG_BREAK': {
+        // completedToday cannot change during break phases — skip the storage scan
         text = 'BRK';
         color = BADGE_GREEN;
         break;
       }
       case 'BREAK_SUGGESTION': {
-        text = `${todayCount}✓`;
+        text = `${state.completedToday}✓`;
         color = BADGE_GOLD;
         break;
       }
       case 'IDLE':
       default: {
-        text = todayCount > 0 ? String(todayCount) : '';
+        text = state.completedToday > 0 ? String(state.completedToday) : '';
         color = BADGE_RED;
         break;
       }
@@ -108,7 +110,7 @@ export default defineBackground(() => {
       label,
       startTime: state.startTime,
       endTime,
-      date: toDateKey(state.startTime),
+      date: toDateKey(endTime),
       duration: state.duration,
     };
 
@@ -139,6 +141,19 @@ export default defineBackground(() => {
     }
 
     await refreshBadge();
+  };
+
+  const applyBlockingOnStartup = async (): Promise<void> => {
+    const [startupState, startupSites] = await Promise.all([getTimerState(), getBlockedSites()]);
+    try {
+      if (startupState.phase === 'WORKING' && startupSites.length > 0) {
+        await applyBlockingRules(startupSites);
+      } else {
+        await clearBlockingRules();
+      }
+    } catch {
+      // blocking rules are best-effort; don't crash the handler
+    }
   };
 
   const handleMessage = async (message: MessageAction) => {
@@ -235,6 +250,7 @@ export default defineBackground(() => {
 
   browser.runtime.onStartup.addListener(async () => {
     await recoverFromMissedAlarm();
+    await applyBlockingOnStartup();
   });
 
   browser.runtime.onMessage.addListener((message) => handleMessage(message as MessageAction));
@@ -251,7 +267,20 @@ export default defineBackground(() => {
 
     const [state, config] = await Promise.all([getTimerState(), getConfig()]);
     const completed = completeTimer(state, config);
-    await setTimerState(completed);
+
+    try {
+      await setTimerState(completed);
+    } catch (err) {
+      // Storage write failed — roll back to the previous persisted state so the
+      // in-memory view stays consistent with what is actually on disk, then
+      // bail out without running any side effects.
+      try {
+        await setTimerState(state);
+      } catch {
+        // Rollback best-effort; nothing more we can do here.
+      }
+      throw err;
+    }
 
     if (state.phase === 'WORKING') {
       await persistCompletedSession(state, Date.now());
